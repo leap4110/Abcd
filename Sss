@@ -1,0 +1,598 @@
+/* 
+   Participant Movement Tracking Across Providers
+   
+   This PROC SQL code tracks how participants move between providers over time.
+   It creates summary tables showing:
+   1. Basic movement counts between providers
+   2. Flow patterns with transition details
+   3. Provider retention and churn analysis
+   
+   SAMPLE DATA CREATION INCLUDED
+*/
+
+/* Create sample data for demonstration */
+DATA source.encounters;
+   INPUT participant_id provider_id service_date DATE9.;
+   FORMAT service_date DATE9.;
+   DATALINES;
+101 1 01JAN2023
+101 1 15FEB2023
+101 2 10MAR2023
+101 3 05APR2023
+101 3 20MAY2023
+101 2 15JUN2023
+101 2 10JUL2023
+102 2 05JAN2023
+102 2 20FEB2023
+102 4 15MAR2023
+102 3 10APR2023
+102 3 05MAY2023
+103 1 10JAN2023
+103 1 25FEB2023
+103 1 20MAR2023
+103 3 15APR2023
+103 3 10MAY2023
+103 3 05JUN2023
+104 4 15JAN2023
+104 4 10FEB2023
+104 2 05MAR2023
+104 2 20APR2023
+104 1 15MAY2023
+104 1 10JUN2023
+105 3 05JAN2023
+105 3 20FEB2023
+105 2 15MAR2023
+105 2 10APR2023
+105 2 05MAY2023
+;
+RUN;
+
+/* Display sample data */
+TITLE "Sample Participant-Provider Encounter Data";
+PROC PRINT DATA=source.encounters;
+   FORMAT service_date DATE9.;
+RUN;
+TITLE;
+
+DATA source.providers;
+   INPUT provider_id provider_name $20.;
+   DATALINES;
+1 Family Practice
+2 Internal Medicine
+3 Cardiology
+4 Orthopedics
+;
+RUN;
+
+/* Set date parameters */
+%LET start_date = 01JAN2023;
+%LET end_date = 31JUL2023;
+
+/* Create a sorted dataset first */
+PROC SORT DATA=source.encounters 
+   OUT=work.sorted_encounters;
+   BY participant_id service_date;
+   WHERE service_date BETWEEN "&start_date."d AND "&end_date."d;
+RUN;
+
+/* Create a dataset with previous values using LAG function */
+DATA work.participant_provider_history;
+   SET work.sorted_encounters;
+   BY participant_id;
+   
+   /* Use LAG to get previous provider */
+   prev_provider = LAG(provider_id);
+   prev_date = LAG(service_date);
+   
+   /* Reset when participant changes */
+   IF FIRST.participant_id THEN DO;
+      prev_provider = .;
+      prev_date = .;
+   END;
+   
+   /* Store values with meaningful names */
+   previous_provider_id = prev_provider;
+   days_since_previous = service_date - prev_date;
+   
+   /* Keep only needed variables */
+   DROP prev_provider prev_date;
+RUN;
+
+/* Generate provider transition summary */
+PROC SQL;
+   CREATE TABLE work.provider_transitions AS
+   SELECT
+      previous_provider_id AS from_provider,
+      provider_id AS to_provider,
+      COUNT(*) AS transition_count,
+      COUNT(DISTINCT participant_id) AS unique_participants,
+      AVG(days_since_previous) AS avg_days_between_transitions,
+      MIN(days_since_previous) AS min_days_between_transitions,
+      MAX(days_since_previous) AS max_days_between_transitions
+   FROM work.participant_provider_history
+   WHERE previous_provider_id IS NOT NULL
+      AND previous_provider_id NE provider_id /* Only count actual transitions */
+   GROUP BY from_provider, to_provider
+   ORDER BY transition_count DESC;
+QUIT;
+
+/* Display provider transitions */
+TITLE "Provider Transition Summary";
+PROC PRINT DATA=work.provider_transitions;
+   FORMAT avg_days_between_transitions min_days_between_transitions max_days_between_transitions 5.1;
+RUN;
+TITLE;
+
+/* Analyze participant flow patterns over time */
+PROC SQL;
+   CREATE TABLE work.participant_flow_patterns AS
+   SELECT
+      YEAR(service_date) AS year,
+      MONTH(service_date) AS month,
+      previous_provider_id AS from_provider,
+      provider_id AS to_provider,
+      COUNT(*) AS monthly_transition_count,
+      COUNT(DISTINCT participant_id) AS unique_participants
+   FROM work.participant_provider_history
+   WHERE previous_provider_id IS NOT NULL
+   GROUP BY year, month, from_provider, to_provider
+   ORDER BY year, month, monthly_transition_count DESC;
+QUIT;
+
+/* Calculate provider retention rates */
+PROC SQL;
+   CREATE TABLE work.provider_retention AS
+   SELECT
+      provider_id,
+      COUNT(DISTINCT participant_id) AS total_participants,
+      /* Count participants who stayed with the provider (no transitions away) */
+      SUM(CASE WHEN participant_id NOT IN 
+         (SELECT DISTINCT participant_id 
+          FROM work.participant_provider_history
+          WHERE previous_provider_id = provider_id
+            AND previous_provider_id NE provider_id) 
+          THEN 1 ELSE 0 END) AS retained_participants,
+      CALCULATED retained_participants / CALCULATED total_participants * 100 AS retention_rate
+   FROM work.participant_provider_history
+   GROUP BY provider_id
+   ORDER BY retention_rate DESC;
+QUIT;
+
+/* Generate participant movement timeline visualization data */
+PROC SQL;
+   CREATE TABLE work.participant_movement_timeline AS
+   SELECT
+      a.participant_id,
+      a.service_date,
+      a.provider_id,
+      p.provider_name, /* Assuming you have a provider reference table */
+      a.previous_provider_id,
+      (SELECT provider_name FROM source.providers 
+       WHERE provider_id = a.previous_provider_id) AS previous_provider_name,
+      a.days_since_previous,
+      /* Flag if this is a new transition */
+      CASE WHEN a.previous_provider_id IS NULL OR 
+                a.previous_provider_id = a.provider_id 
+           THEN 0 ELSE 1 END AS is_transition
+   FROM work.participant_provider_history a
+   LEFT JOIN source.providers p ON a.provider_id = p.provider_id
+   ORDER BY participant_id, service_date;
+QUIT;
+
+/* Create a comprehensive participant journey summary */
+PROC SQL;
+   CREATE TABLE work.participant_journey_summary AS
+   SELECT
+      participant_id,
+      COUNT(DISTINCT provider_id) AS number_of_providers,
+      MIN(service_date) AS first_encounter_date,
+      MAX(service_date) AS last_encounter_date,
+      CALCULATED last_encounter_date - CALCULATED first_encounter_date AS total_days_in_system,
+      SUM(is_transition) AS total_transitions,
+      CASE 
+         WHEN COUNT(DISTINCT provider_id) = 1 THEN 'Single Provider'
+         WHEN COUNT(DISTINCT provider_id) = 2 THEN 'Two Providers'
+         WHEN COUNT(DISTINCT provider_id) <= 4 THEN 'Multiple Providers'
+         ELSE 'Complex Journey'
+      END AS journey_classification
+   FROM work.participant_movement_timeline
+   GROUP BY participant_id
+   ORDER BY total_transitions DESC;
+QUIT;
+
+/* Create a report of the most common provider sequences */
+PROC SQL;
+   /* This requires building concatenated strings of provider visits */
+   /* Create a common journey patterns table */
+   CREATE TABLE work.common_journey_patterns AS
+   SELECT
+      journey_path, /* This would be a constructed string of provider IDs in sequence */
+      COUNT(*) AS pattern_frequency,
+      AVG(total_days_in_system) AS avg_journey_length_days
+   FROM (
+      /* Subquery would construct the journey paths */
+      /* Implementation depends on SAS version and available functions */
+      /* This is conceptual and would need customization */
+   )
+   GROUP BY journey_path
+   HAVING COUNT(*) >= 5 /* Only show patterns that occur at least 5 times */
+   ORDER BY pattern_frequency DESC;
+QUIT;
+
+/* Output reporting section */
+TITLE "Provider Transition Frequency Report";
+PROC PRINT DATA=work.provider_transitions;
+RUN;
+
+TITLE "Monthly Participant Flow Patterns";
+PROC PRINT DATA=work.participant_flow_patterns;
+RUN;
+
+TITLE "Provider Retention Analysis";
+PROC PRINT DATA=work.provider_retention;
+RUN;
+
+TITLE "Participant Journey Classification Summary";
+PROC PRINT DATA=work.participant_journey_summary;
+RUN;
+
+/* Create visualization of participant movement */
+TITLE "Participant Movement Visualization";
+
+/* Sankey Diagram-style visualization using PROC SGPLOT and HIGHLOW plots */
+PROC SGPLOT DATA=work.provider_transitions;
+   HIGHLOW Y=from_provider LOW=0 HIGH=transition_count / 
+           TYPE=LINE LINEATTRS=(THICKNESS=5 COLOR=blue);
+   HIGHLOW Y=to_provider LOW=0 HIGH=transition_count / 
+           TYPE=LINE LINEATTRS=(THICKNESS=5 COLOR=green);
+   XAXIS DISPLAY=NONE;
+   YAXIS GRID VALUES=(1 2 3 4) VALUESDISPLAY=('Family Practice' 'Internal Medicine' 'Cardiology' 'Orthopedics');
+RUN;
+
+/* Create a heatmap of provider transitions */
+PROC TEMPLATE;
+   DEFINE STATGRAPH heatmap;
+      BEGINGRAPH;
+         ENTRYTITLE "Provider Transition Heatmap";
+         LAYOUT OVERLAY / 
+            XAXISOPTS=(LABEL="To Provider" 
+                       LABELATTRS=(SIZE=14PT) 
+                       TICKVALUEATTRS=(SIZE=12PT)
+                       DISCRETEOPTS=(TICKVALUELIST=(1 2 3 4)))
+            YAXISOPTS=(LABEL="From Provider" 
+                       LABELATTRS=(SIZE=14PT) 
+                       TICKVALUEATTRS=(SIZE=12PT)
+                       DISCRETEOPTS=(TICKVALUELIST=(1 2 3 4)))
+            COLORMODEL=THREECOLORLINEAR
+            COLORMODEL=(CX0000FF CX6495ED CXFF0000);
+            HEATMAPPARM X=to_provider Y=from_provider COLORRESPONSE=transition_count /
+               NAME="heatmap" DISPLAY=ALL;
+            CONTINUOUSLEGEND "heatmap" / TITLE="Transition Count";
+         ENDLAYOUT;
+      ENDGRAPH;
+   END;
+RUN;
+
+PROC SGRENDER DATA=work.provider_transitions TEMPLATE=heatmap;
+RUN;
+
+/* Create a time-series visualization of transitions by month */
+PROC SGPLOT DATA=work.participant_flow_patterns;
+   VBAR month / GROUP=from_provider RESPONSE=monthly_transition_count 
+                GROUPDISPLAY=CLUSTER DATALABEL;
+   WHERE year=2023;
+   XAXIS LABEL="Month";
+   YAXIS LABEL="Transition Count";
+   KEYLEGEND / TITLE="From Provider";
+RUN;
+
+/* Create a bubble plot of participant flow */
+PROC SGPLOT DATA=work.provider_transitions;
+   BUBBLE X=from_provider Y=to_provider SIZE=transition_count / 
+          DATALABEL=transition_count;
+   XAXIS LABEL="From Provider" VALUES=(1 2 3 4) 
+         VALUESDISPLAY=('Family Practice' 'Internal Medicine' 'Cardiology' 'Orthopedics');
+   YAXIS LABEL="To Provider" VALUES=(1 2 3 4)
+         VALUESDISPLAY=('Family Practice' 'Internal Medicine' 'Cardiology' 'Orthopedics');
+RUN;
+
+
+
+
+/* 
+   Participant Movement Tracking Across Providers
+   
+   This PROC SQL code tracks how participants move between providers over time.
+   It creates summary tables showing:
+   1. Basic movement counts between providers
+   2. Flow patterns with transition details
+   3. Provider retention and churn analysis
+   
+   SAMPLE DATA CREATION INCLUDED
+*/
+
+/* Create sample data for demonstration */
+DATA source.encounters;
+   INPUT participant_id provider_id service_date DATE9.;
+   FORMAT service_date DATE9.;
+   DATALINES;
+101 1 01JAN2023
+101 1 15FEB2023
+101 2 10MAR2023
+101 3 05APR2023
+101 3 20MAY2023
+101 2 15JUN2023
+101 2 10JUL2023
+102 2 05JAN2023
+102 2 20FEB2023
+102 4 15MAR2023
+102 3 10APR2023
+102 3 05MAY2023
+103 1 10JAN2023
+103 1 25FEB2023
+103 1 20MAR2023
+103 3 15APR2023
+103 3 10MAY2023
+103 3 05JUN2023
+104 4 15JAN2023
+104 4 10FEB2023
+104 2 05MAR2023
+104 2 20APR2023
+104 1 15MAY2023
+104 1 10JUN2023
+105 3 05JAN2023
+105 3 20FEB2023
+105 2 15MAR2023
+105 2 10APR2023
+105 2 05MAY2023
+;
+RUN;
+
+/* Display sample data */
+TITLE "Sample Participant-Provider Encounter Data";
+PROC PRINT DATA=source.encounters;
+   FORMAT service_date DATE9.;
+RUN;
+TITLE;
+
+DATA source.providers;
+   INPUT provider_id provider_name $20.;
+   DATALINES;
+1 Family Practice
+2 Internal Medicine
+3 Cardiology
+4 Orthopedics
+;
+RUN;
+
+/* Set date parameters */
+%LET start_date = 01JAN2023;
+%LET end_date = 31JUL2023;
+
+/* Create a sorted dataset first */
+PROC SORT DATA=source.encounters 
+   OUT=work.sorted_encounters;
+   BY participant_id service_date;
+   WHERE service_date BETWEEN "&start_date."d AND "&end_date."d;
+RUN;
+
+/* Create a dataset with previous values using LAG function */
+DATA work.participant_provider_history;
+   SET work.sorted_encounters;
+   BY participant_id;
+   
+   /* Use LAG to get previous provider */
+   prev_provider = LAG(provider_id);
+   prev_date = LAG(service_date);
+   
+   /* Reset when participant changes */
+   IF FIRST.participant_id THEN DO;
+      prev_provider = .;
+      prev_date = .;
+   END;
+   
+   /* Store values with meaningful names */
+   previous_provider_id = prev_provider;
+   days_since_previous = service_date - prev_date;
+   
+   /* Keep only needed variables */
+   DROP prev_provider prev_date;
+RUN;
+
+/* Generate provider transition summary */
+PROC SQL;
+   CREATE TABLE work.provider_transitions AS
+   SELECT
+      previous_provider_id AS from_provider,
+      provider_id AS to_provider,
+      COUNT(*) AS transition_count,
+      COUNT(DISTINCT participant_id) AS unique_participants,
+      AVG(days_since_previous) AS avg_days_between_transitions,
+      MIN(days_since_previous) AS min_days_between_transitions,
+      MAX(days_since_previous) AS max_days_between_transitions
+   FROM work.participant_provider_history
+   WHERE previous_provider_id IS NOT NULL
+      AND previous_provider_id NE provider_id /* Only count actual transitions */
+   GROUP BY from_provider, to_provider
+   ORDER BY transition_count DESC;
+QUIT;
+
+/* Display provider transitions */
+TITLE "Provider Transition Summary";
+PROC PRINT DATA=work.provider_transitions;
+   FORMAT avg_days_between_transitions min_days_between_transitions max_days_between_transitions 5.1;
+RUN;
+TITLE;
+
+/* Analyze participant flow patterns over time */
+PROC SQL;
+   CREATE TABLE work.participant_flow_patterns AS
+   SELECT
+      YEAR(service_date) AS year,
+      MONTH(service_date) AS month,
+      previous_provider_id AS from_provider,
+      provider_id AS to_provider,
+      COUNT(*) AS monthly_transition_count,
+      COUNT(DISTINCT participant_id) AS unique_participants
+   FROM work.participant_provider_history
+   WHERE previous_provider_id IS NOT NULL
+   GROUP BY year, month, from_provider, to_provider
+   ORDER BY year, month, monthly_transition_count DESC;
+QUIT;
+
+/* Calculate provider retention rates */
+PROC SQL;
+   CREATE TABLE work.provider_retention AS
+   SELECT
+      provider_id,
+      COUNT(DISTINCT participant_id) AS total_participants,
+      /* Count participants who stayed with the provider (no transitions away) */
+      SUM(CASE WHEN participant_id NOT IN 
+         (SELECT DISTINCT participant_id 
+          FROM work.participant_provider_history
+          WHERE previous_provider_id = provider_id
+            AND previous_provider_id NE provider_id) 
+          THEN 1 ELSE 0 END) AS retained_participants,
+      CALCULATED retained_participants / CALCULATED total_participants * 100 AS retention_rate
+   FROM work.participant_provider_history
+   GROUP BY provider_id
+   ORDER BY retention_rate DESC;
+QUIT;
+
+/* Generate participant movement timeline visualization data */
+PROC SQL;
+   CREATE TABLE work.participant_movement_timeline AS
+   SELECT
+      a.participant_id,
+      a.service_date,
+      a.provider_id,
+      p.provider_name, /* Assuming you have a provider reference table */
+      a.previous_provider_id,
+      (SELECT provider_name FROM source.providers 
+       WHERE provider_id = a.previous_provider_id) AS previous_provider_name,
+      a.days_since_previous,
+      /* Flag if this is a new transition */
+      CASE WHEN a.previous_provider_id IS NULL OR 
+                a.previous_provider_id = a.provider_id 
+           THEN 0 ELSE 1 END AS is_transition
+   FROM work.participant_provider_history a
+   LEFT JOIN source.providers p ON a.provider_id = p.provider_id
+   ORDER BY participant_id, service_date;
+QUIT;
+
+/* Create a comprehensive participant journey summary */
+PROC SQL;
+   CREATE TABLE work.participant_journey_summary AS
+   SELECT
+      participant_id,
+      COUNT(DISTINCT provider_id) AS number_of_providers,
+      MIN(service_date) AS first_encounter_date,
+      MAX(service_date) AS last_encounter_date,
+      CALCULATED last_encounter_date - CALCULATED first_encounter_date AS total_days_in_system,
+      SUM(is_transition) AS total_transitions,
+      CASE 
+         WHEN COUNT(DISTINCT provider_id) = 1 THEN 'Single Provider'
+         WHEN COUNT(DISTINCT provider_id) = 2 THEN 'Two Providers'
+         WHEN COUNT(DISTINCT provider_id) <= 4 THEN 'Multiple Providers'
+         ELSE 'Complex Journey'
+      END AS journey_classification
+   FROM work.participant_movement_timeline
+   GROUP BY participant_id
+   ORDER BY total_transitions DESC;
+QUIT;
+
+/* Create a report of the most common provider sequences */
+PROC SQL;
+   /* This requires building concatenated strings of provider visits */
+   /* Create a common journey patterns table */
+   CREATE TABLE work.common_journey_patterns AS
+   SELECT
+      journey_path, /* This would be a constructed string of provider IDs in sequence */
+      COUNT(*) AS pattern_frequency,
+      AVG(total_days_in_system) AS avg_journey_length_days
+   FROM (
+      /* Subquery would construct the journey paths */
+      /* Implementation depends on SAS version and available functions */
+      /* This is conceptual and would need customization */
+   )
+   GROUP BY journey_path
+   HAVING COUNT(*) >= 5 /* Only show patterns that occur at least 5 times */
+   ORDER BY pattern_frequency DESC;
+QUIT;
+
+/* Output reporting section */
+TITLE "Provider Transition Frequency Report";
+PROC PRINT DATA=work.provider_transitions;
+RUN;
+
+TITLE "Monthly Participant Flow Patterns";
+PROC PRINT DATA=work.participant_flow_patterns;
+RUN;
+
+TITLE "Provider Retention Analysis";
+PROC PRINT DATA=work.provider_retention;
+RUN;
+
+TITLE "Participant Journey Classification Summary";
+PROC PRINT DATA=work.participant_journey_summary;
+RUN;
+
+/* Create visualization of participant movement */
+TITLE "Participant Movement Visualization";
+
+/* Sankey Diagram-style visualization using PROC SGPLOT and HIGHLOW plots */
+PROC SGPLOT DATA=work.provider_transitions;
+   HIGHLOW Y=from_provider LOW=0 HIGH=transition_count / 
+           TYPE=LINE LINEATTRS=(THICKNESS=5 COLOR=blue);
+   HIGHLOW Y=to_provider LOW=0 HIGH=transition_count / 
+           TYPE=LINE LINEATTRS=(THICKNESS=5 COLOR=green);
+   XAXIS DISPLAY=NONE;
+   YAXIS GRID VALUES=(1 2 3 4) VALUESDISPLAY=('Family Practice' 'Internal Medicine' 'Cardiology' 'Orthopedics');
+RUN;
+
+/* Create a heatmap of provider transitions */
+PROC TEMPLATE;
+   DEFINE STATGRAPH heatmap;
+      BEGINGRAPH;
+         ENTRYTITLE "Provider Transition Heatmap";
+         LAYOUT OVERLAY / 
+            XAXISOPTS=(LABEL="To Provider" 
+                       LABELATTRS=(SIZE=14PT) 
+                       TICKVALUEATTRS=(SIZE=12PT)
+                       DISCRETEOPTS=(TICKVALUELIST=(1 2 3 4)))
+            YAXISOPTS=(LABEL="From Provider" 
+                       LABELATTRS=(SIZE=14PT) 
+                       TICKVALUEATTRS=(SIZE=12PT)
+                       DISCRETEOPTS=(TICKVALUELIST=(1 2 3 4)))
+            COLORMODEL=THREECOLORLINEAR
+            COLORMODEL=(CX0000FF CX6495ED CXFF0000);
+            HEATMAPPARM X=to_provider Y=from_provider COLORRESPONSE=transition_count /
+               NAME="heatmap" DISPLAY=ALL;
+            CONTINUOUSLEGEND "heatmap" / TITLE="Transition Count";
+         ENDLAYOUT;
+      ENDGRAPH;
+   END;
+RUN;
+
+PROC SGRENDER DATA=work.provider_transitions TEMPLATE=heatmap;
+RUN;
+
+/* Create a time-series visualization of transitions by month */
+PROC SGPLOT DATA=work.participant_flow_patterns;
+   VBAR month / GROUP=from_provider RESPONSE=monthly_transition_count 
+                GROUPDISPLAY=CLUSTER DATALABEL;
+   WHERE year=2023;
+   XAXIS LABEL="Month";
+   YAXIS LABEL="Transition Count";
+   KEYLEGEND / TITLE="From Provider";
+RUN;
+
+/* Create a bubble plot of participant flow */
+PROC SGPLOT DATA=work.provider_transitions;
+   BUBBLE X=from_provider Y=to_provider SIZE=transition_count / 
+          DATALABEL=transition_count;
+   XAXIS LABEL="From Provider" VALUES=(1 2 3 4) 
+         VALUESDISPLAY=('Family Practice' 'Internal Medicine' 'Cardiology' 'Orthopedics');
+   YAXIS LABEL="To Provider" VALUES=(1 2 3 4)
+         VALUESDISPLAY=('Family Practice' 'Internal Medicine' 'Cardiology' 'Orthopedics');
+RUN;
