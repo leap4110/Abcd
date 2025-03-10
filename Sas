@@ -1,0 +1,156 @@
+/* 
+   Participant Movement Tracking Across Providers
+   
+   This PROC SQL code tracks how participants move between providers over time.
+   It creates summary tables showing:
+   1. Basic movement counts between providers
+   2. Flow patterns with transition details
+   3. Provider retention and churn analysis
+*/
+
+/* Create a temporary table of participant-provider pairs with timestamps */
+PROC SQL;
+   CREATE TABLE work.participant_provider_history AS
+   SELECT 
+      participant_id,
+      provider_id,
+      service_date,
+      /* Identify the previous provider for each participant */
+      LAG(provider_id) OVER (PARTITION BY participant_id ORDER BY service_date) AS previous_provider_id,
+      /* Calculate days since previous provider visit */
+      service_date - LAG(service_date) OVER (PARTITION BY participant_id ORDER BY service_date) AS days_since_previous
+   FROM source.encounters
+   WHERE service_date BETWEEN "&start_date."d AND "&end_date."d
+   ORDER BY participant_id, service_date;
+QUIT;
+
+/* Generate provider transition summary */
+PROC SQL;
+   CREATE TABLE work.provider_transitions AS
+   SELECT
+      previous_provider_id AS from_provider,
+      provider_id AS to_provider,
+      COUNT(*) AS transition_count,
+      COUNT(DISTINCT participant_id) AS unique_participants,
+      AVG(days_since_previous) AS avg_days_between_transitions,
+      MIN(days_since_previous) AS min_days_between_transitions,
+      MAX(days_since_previous) AS max_days_between_transitions
+   FROM work.participant_provider_history
+   WHERE previous_provider_id IS NOT NULL
+      AND previous_provider_id NE provider_id /* Only count actual transitions */
+   GROUP BY from_provider, to_provider
+   ORDER BY transition_count DESC;
+QUIT;
+
+/* Analyze participant flow patterns over time */
+PROC SQL;
+   CREATE TABLE work.participant_flow_patterns AS
+   SELECT
+      YEAR(service_date) AS year,
+      MONTH(service_date) AS month,
+      previous_provider_id AS from_provider,
+      provider_id AS to_provider,
+      COUNT(*) AS monthly_transition_count,
+      COUNT(DISTINCT participant_id) AS unique_participants
+   FROM work.participant_provider_history
+   WHERE previous_provider_id IS NOT NULL
+   GROUP BY year, month, from_provider, to_provider
+   ORDER BY year, month, monthly_transition_count DESC;
+QUIT;
+
+/* Calculate provider retention rates */
+PROC SQL;
+   CREATE TABLE work.provider_retention AS
+   SELECT
+      provider_id,
+      COUNT(DISTINCT participant_id) AS total_participants,
+      /* Count participants who stayed with the provider (no transitions away) */
+      SUM(CASE WHEN participant_id NOT IN 
+         (SELECT DISTINCT participant_id 
+          FROM work.participant_provider_history
+          WHERE previous_provider_id = provider_id
+            AND previous_provider_id NE provider_id) 
+          THEN 1 ELSE 0 END) AS retained_participants,
+      CALCULATED retained_participants / CALCULATED total_participants * 100 AS retention_rate
+   FROM work.participant_provider_history
+   GROUP BY provider_id
+   ORDER BY retention_rate DESC;
+QUIT;
+
+/* Generate participant movement timeline visualization data */
+PROC SQL;
+   CREATE TABLE work.participant_movement_timeline AS
+   SELECT
+      a.participant_id,
+      a.service_date,
+      a.provider_id,
+      p.provider_name, /* Assuming you have a provider reference table */
+      a.previous_provider_id,
+      (SELECT provider_name FROM source.providers 
+       WHERE provider_id = a.previous_provider_id) AS previous_provider_name,
+      a.days_since_previous,
+      /* Flag if this is a new transition */
+      CASE WHEN a.previous_provider_id IS NULL OR 
+                a.previous_provider_id = a.provider_id 
+           THEN 0 ELSE 1 END AS is_transition
+   FROM work.participant_provider_history a
+   LEFT JOIN source.providers p ON a.provider_id = p.provider_id
+   ORDER BY participant_id, service_date;
+QUIT;
+
+/* Create a comprehensive participant journey summary */
+PROC SQL;
+   CREATE TABLE work.participant_journey_summary AS
+   SELECT
+      participant_id,
+      COUNT(DISTINCT provider_id) AS number_of_providers,
+      MIN(service_date) AS first_encounter_date,
+      MAX(service_date) AS last_encounter_date,
+      CALCULATED last_encounter_date - CALCULATED first_encounter_date AS total_days_in_system,
+      SUM(is_transition) AS total_transitions,
+      CASE 
+         WHEN COUNT(DISTINCT provider_id) = 1 THEN 'Single Provider'
+         WHEN COUNT(DISTINCT provider_id) = 2 THEN 'Two Providers'
+         WHEN COUNT(DISTINCT provider_id) <= 4 THEN 'Multiple Providers'
+         ELSE 'Complex Journey'
+      END AS journey_classification
+   FROM work.participant_movement_timeline
+   GROUP BY participant_id
+   ORDER BY total_transitions DESC;
+QUIT;
+
+/* Create a report of the most common provider sequences */
+PROC SQL;
+   /* This requires building concatenated strings of provider visits */
+   /* Create a common journey patterns table */
+   CREATE TABLE work.common_journey_patterns AS
+   SELECT
+      journey_path, /* This would be a constructed string of provider IDs in sequence */
+      COUNT(*) AS pattern_frequency,
+      AVG(total_days_in_system) AS avg_journey_length_days
+   FROM (
+      /* Subquery would construct the journey paths */
+      /* Implementation depends on SAS version and available functions */
+      /* This is conceptual and would need customization */
+   )
+   GROUP BY journey_path
+   HAVING COUNT(*) >= 5 /* Only show patterns that occur at least 5 times */
+   ORDER BY pattern_frequency DESC;
+QUIT;
+
+/* Output reporting section */
+TITLE "Provider Transition Frequency Report";
+PROC PRINT DATA=work.provider_transitions;
+RUN;
+
+TITLE "Monthly Participant Flow Patterns";
+PROC PRINT DATA=work.participant_flow_patterns;
+RUN;
+
+TITLE "Provider Retention Analysis";
+PROC PRINT DATA=work.provider_retention;
+RUN;
+
+TITLE "Participant Journey Classification Summary";
+PROC PRINT DATA=work.participant_journey_summary;
+RUN;
