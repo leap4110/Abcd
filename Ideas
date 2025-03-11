@@ -1,0 +1,178 @@
+There are several additional indicators you could add to your participant movement analysis to gain deeper insights. Here are some valuable metrics you could incorporate:
+
+### 1. Provider-Specific Indicators
+
+- **Provider Attraction Rate**: Percentage of participants who are new to a provider (first visit ever)
+```sql
+PROC SQL;
+   CREATE TABLE work.provider_attraction AS
+   SELECT 
+      provider_id,
+      COUNT(DISTINCT participant_id) AS total_participants,
+      COUNT(DISTINCT CASE WHEN previous_provider_id IS NULL THEN participant_id END) AS new_participants,
+      CALCULATED new_participants / CALCULATED total_participants * 100 AS attraction_rate
+   FROM work.participant_provider_history
+   GROUP BY provider_id;
+QUIT;
+```
+
+- **Average Provider Duration**: How long participants typically stay with each provider before transitioning
+```sql
+DATA work.duration_by_provider;
+   SET work.participant_provider_history;
+   BY participant_id provider_id;
+   
+   /* Track dates for calculating duration */
+   IF FIRST.provider_id THEN first_date = service_date;
+   IF LAST.provider_id THEN last_date = service_date;
+   
+   /* Only output when we have full duration data */
+   IF LAST.provider_id THEN DO;
+      duration_days = last_date - first_date;
+      OUTPUT;
+   END;
+   
+   KEEP participant_id provider_id first_date last_date duration_days;
+RUN;
+```
+
+- **Provider Bounce Rate**: Percentage of participants who visit a provider only once before moving to another
+
+### 2. Transition Quality Indicators
+
+- **Transition Delay**: Time between last visit with previous provider and first visit with new provider
+```sql
+PROC SQL;
+   CREATE TABLE work.transition_delays AS
+   SELECT
+      from_provider,
+      to_provider,
+      AVG(days_since_previous) AS avg_delay_days,
+      CASE 
+         WHEN CALCULATED avg_delay_days <= 30 THEN 'Timely'
+         WHEN CALCULATED avg_delay_days <= 90 THEN 'Moderate Delay'
+         ELSE 'Long Delay'
+      END AS transition_timing
+   FROM work.participant_provider_history
+   WHERE previous_provider_id IS NOT NULL
+      AND previous_provider_id NE provider_id
+   GROUP BY from_provider, to_provider;
+QUIT;
+```
+
+- **Care Continuity Score**: Measure of how quickly participants transition between providers (lower delay = higher continuity)
+
+- **Bidirectional Relationship Strength**: Compare flows in both directions between provider pairs
+```sql
+PROC SQL;
+   CREATE TABLE work.bidirectional_flow AS
+   SELECT
+      CASE WHEN a.from_provider < a.to_provider 
+           THEN a.from_provider ELSE a.to_provider END AS provider1,
+      CASE WHEN a.from_provider < a.to_provider 
+           THEN a.to_provider ELSE a.from_provider END AS provider2,
+      SUM(a.transition_count) AS total_transitions,
+      MIN(a.transition_count, b.transition_count) / 
+      MAX(a.transition_count, b.transition_count) AS bidirectional_balance
+   FROM work.provider_transitions a
+   JOIN work.provider_transitions b
+      ON a.from_provider = b.to_provider AND a.to_provider = b.from_provider
+   GROUP BY provider1, provider2;
+QUIT;
+```
+
+### 3. Participant Journey Indicators
+
+- **Journey Complexity Index**: Combination of number of providers and transitions
+```sql
+DATA work.journey_complexity;
+   SET work.participant_journey_summary;
+   
+   /* Create a weighted complexity score */
+   complexity_score = (number_of_providers * 0.4) + 
+                      (total_transitions * 0.3) + 
+                      (total_days_in_system / 30 * 0.3);
+                      
+   /* Classify based on complexity */
+   IF complexity_score < 3 THEN complexity_level = 'Low';
+   ELSE IF complexity_score < 6 THEN complexity_level = 'Medium';
+   ELSE complexity_level = 'High';
+RUN;
+```
+
+- **Provider Loyalty Index**: Percentage of total visits a participant has with their most frequent provider
+```sql
+PROC SQL;
+   CREATE TABLE work.provider_loyalty AS
+   SELECT 
+      participant_id,
+      MAX(visit_count) / SUM(visit_count) * 100 AS loyalty_index
+   FROM (
+      SELECT
+         participant_id,
+         provider_id,
+         COUNT(*) AS visit_count
+      FROM work.participant_provider_history
+      GROUP BY participant_id, provider_id
+   )
+   GROUP BY participant_id;
+QUIT;
+```
+
+- **Cycling Pattern Detection**: Identify participants who repeatedly cycle between the same set of providers
+
+### 4. Temporal Indicators
+
+- **Seasonal Transition Patterns**: Analyze if certain transitions happen more frequently in specific months
+```sql
+PROC FREQ DATA=work.participant_flow_patterns;
+   TABLES month * from_provider * to_provider / NOROW NOCOL;
+   WEIGHT monthly_transition_count;
+RUN;
+```
+
+- **Provider Trend Analysis**: Track changes in provider market share over time
+```sql
+PROC SQL;
+   CREATE TABLE work.provider_market_share AS
+   SELECT
+      YEAR(service_date) AS year,
+      MONTH(service_date) AS month,
+      provider_id,
+      COUNT(DISTINCT participant_id) AS unique_participants,
+      CALCULATED unique_participants / 
+         (SELECT COUNT(DISTINCT participant_id) 
+          FROM work.participant_provider_history
+          WHERE YEAR(service_date) = CALCULATED year
+            AND MONTH(service_date) = CALCULATED month) * 100 AS market_share
+   FROM work.participant_provider_history
+   GROUP BY year, month, provider_id
+   ORDER BY year, month, provider_id;
+QUIT;
+```
+
+- **Transition Velocity**: Average time for participants to complete their entire journey through the system
+
+### 5. Network-Based Indicators
+
+- **Provider Centrality**: Measure which providers are central to the network (receive/send the most participants)
+```sql
+PROC SQL;
+   CREATE TABLE work.provider_centrality AS
+   SELECT
+      provider_id,
+      (SELECT COUNT(*) FROM work.provider_transitions 
+       WHERE to_provider = provider_id) AS incoming_transitions,
+      (SELECT COUNT(*) FROM work.provider_transitions 
+       WHERE from_provider = provider_id) AS outgoing_transitions,
+      CALCULATED incoming_transitions + CALCULATED outgoing_transitions AS total_connections
+   FROM (SELECT DISTINCT provider_id FROM work.participant_provider_history)
+   ORDER BY total_connections DESC;
+QUIT;
+```
+
+- **Referral Communities**: Identify clusters of providers that frequently exchange participants
+
+- **Pathway Efficiency**: Compare direct transitions vs. multiple-step journeys between key providers
+
+These indicators will help you develop a more nuanced understanding of participant movement patterns, provider relationships, and system efficiency. They can be particularly valuable for identifying opportunities to improve care coordination, reduce unnecessary transitions, and enhance participant experience.
