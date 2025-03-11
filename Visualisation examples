@@ -1,0 +1,554 @@
+/* 
+   Additional Indicators and Visualizations for Participant Movement Analysis
+   This code builds on the previously created participant movement tracking
+*/
+
+/* -------------------------------------------- */
+/* 1. PROVIDER-SPECIFIC INDICATORS              */
+/* -------------------------------------------- */
+
+/* 1.1 Provider Attraction Rate */
+PROC SQL;
+   CREATE TABLE work.provider_attraction AS
+   SELECT 
+      provider_id,
+      COUNT(DISTINCT participant_id) AS total_participants,
+      COUNT(DISTINCT CASE WHEN first_visit_flag = 1 THEN participant_id END) AS new_participants,
+      CALCULATED new_participants / CALCULATED total_participants * 100 AS attraction_rate
+   FROM (
+      /* Add flag for first visit */
+      SELECT 
+         a.*,
+         CASE WHEN b.participant_id IS NULL THEN 1 ELSE 0 END AS first_visit_flag
+      FROM work.participant_provider_history a
+      LEFT JOIN (
+         SELECT participant_id, MIN(service_date) AS first_date
+         FROM work.participant_provider_history
+         GROUP BY participant_id
+      ) b ON a.participant_id = b.participant_id AND a.service_date = b.first_date
+   )
+   GROUP BY provider_id;
+QUIT;
+
+/* Visualize Provider Attraction Rate */
+PROC SGPLOT DATA=work.provider_attraction;
+   VBAR provider_id / RESPONSE=attraction_rate DATALABEL;
+   REFLINE 50 / LINEATTRS=(PATTERN=2 COLOR=RED);
+   XAXIS LABEL="Provider ID" VALUES=(1 TO 4) 
+         VALUESDISPLAY=('Family Practice' 'Internal Medicine' 'Cardiology' 'Orthopedics');
+   YAXIS LABEL="New Participant Rate (%)" MAX=100;
+   TITLE "Provider Attraction Rate - % of New Participants";
+RUN;
+TITLE;
+
+/* 1.2 Average Provider Duration */
+DATA work.duration_by_provider;
+   SET work.participant_provider_history;
+   BY participant_id provider_id;
+   
+   /* Track dates for calculating duration */
+   IF FIRST.provider_id THEN first_date = service_date;
+   IF LAST.provider_id THEN last_date = service_date;
+   
+   /* Only output when we have full duration data */
+   IF LAST.provider_id THEN DO;
+      duration_days = last_date - first_date;
+      OUTPUT;
+   END;
+   
+   KEEP participant_id provider_id first_date last_date duration_days;
+RUN;
+
+/* Calculate average duration by provider */
+PROC MEANS DATA=work.duration_by_provider NOPRINT;
+   CLASS provider_id;
+   VAR duration_days;
+   OUTPUT OUT=work.avg_duration MEAN=avg_duration;
+RUN;
+
+/* Visualize Average Duration */
+PROC SGPLOT DATA=work.avg_duration;
+   WHERE _TYPE_ = 1; /* Only use grouped stats */
+   VBAR provider_id / RESPONSE=avg_duration DATALABEL;
+   XAXIS LABEL="Provider ID" VALUES=(1 TO 4)
+         VALUESDISPLAY=('Family Practice' 'Internal Medicine' 'Cardiology' 'Orthopedics');
+   YAXIS LABEL="Average Days with Provider";
+   TITLE "Average Duration with Each Provider";
+RUN;
+TITLE;
+
+/* 1.3 Provider Bounce Rate */
+PROC SQL;
+   CREATE TABLE work.provider_bounce AS
+   SELECT
+      provider_id,
+      COUNT(DISTINCT participant_id) AS total_participants,
+      COUNT(DISTINCT CASE WHEN visit_count = 1 THEN participant_id END) AS single_visit_participants,
+      CALCULATED single_visit_participants / CALCULATED total_participants * 100 AS bounce_rate
+   FROM (
+      SELECT
+         provider_id,
+         participant_id,
+         COUNT(*) AS visit_count
+      FROM work.participant_provider_history
+      GROUP BY provider_id, participant_id
+   )
+   GROUP BY provider_id;
+QUIT;
+
+/* Visualize Provider Bounce Rate */
+PROC SGPLOT DATA=work.provider_bounce;
+   HBAR provider_id / RESPONSE=bounce_rate DATALABEL;
+   XAXIS LABEL="Bounce Rate (%)";
+   YAXIS LABEL="Provider ID" VALUES=(1 TO 4) REVERSE
+         VALUESDISPLAY=('Family Practice' 'Internal Medicine' 'Cardiology' 'Orthopedics');
+   TITLE "Provider Bounce Rate - % of Single Visit Participants";
+RUN;
+TITLE;
+
+/* -------------------------------------------- */
+/* 2. TRANSITION QUALITY INDICATORS             */
+/* -------------------------------------------- */
+
+/* 2.1 Transition Delay */
+PROC SQL;
+   CREATE TABLE work.transition_delays AS
+   SELECT
+      previous_provider_id AS from_provider,
+      provider_id AS to_provider,
+      AVG(days_since_previous) AS avg_delay_days,
+      CASE 
+         WHEN CALCULATED avg_delay_days <= 30 THEN 'Timely'
+         WHEN CALCULATED avg_delay_days <= 90 THEN 'Moderate Delay'
+         ELSE 'Long Delay'
+      END AS transition_timing
+   FROM work.participant_provider_history
+   WHERE previous_provider_id IS NOT NULL
+      AND previous_provider_id NE provider_id
+   GROUP BY from_provider, to_provider;
+QUIT;
+
+/* Visualize Transition Delays */
+PROC SGPLOT DATA=work.transition_delays;
+   BUBBLE X=from_provider Y=to_provider SIZE=avg_delay_days / 
+          DATALABEL=avg_delay_days;
+   XAXIS LABEL="From Provider" VALUES=(1 TO 4)
+         VALUESDISPLAY=('Family Practice' 'Internal Medicine' 'Cardiology' 'Orthopedics');
+   YAXIS LABEL="To Provider" VALUES=(1 TO 4)
+         VALUESDISPLAY=('Family Practice' 'Internal Medicine' 'Cardiology' 'Orthopedics');
+   TITLE "Average Transition Delay (Days) Between Providers";
+RUN;
+TITLE;
+
+/* Create transition timing chart */
+PROC SGPLOT DATA=work.transition_delays;
+   VBAR transition_timing / GROUP=from_provider;
+   YAXIS LABEL="Number of Transition Types";
+   XAXIS LABEL="Transition Timing" VALUES=('Timely' 'Moderate Delay' 'Long Delay');
+   KEYLEGEND / TITLE="From Provider";
+   TITLE "Transition Timing by Provider";
+RUN;
+TITLE;
+
+/* 2.2 Care Continuity Score */
+PROC SQL;
+   CREATE TABLE work.care_continuity AS
+   SELECT
+      participant_id,
+      AVG(CASE WHEN previous_provider_id IS NOT NULL 
+                AND previous_provider_id NE provider_id
+               THEN days_since_previous ELSE . END) AS avg_transition_days,
+      CASE
+         WHEN CALCULATED avg_transition_days < 30 THEN 100
+         WHEN CALCULATED avg_transition_days < 60 THEN 75
+         WHEN CALCULATED avg_transition_days < 90 THEN 50
+         WHEN CALCULATED avg_transition_days < 120 THEN 25
+         ELSE 0
+      END AS continuity_score
+   FROM work.participant_provider_history
+   GROUP BY participant_id;
+QUIT;
+
+/* Visualize Care Continuity Scores */
+PROC SGPLOT DATA=work.care_continuity;
+   HISTOGRAM continuity_score / BINWIDTH=25 SHOWBINS;
+   DENSITY continuity_score / TYPE=KERNEL;
+   XAXIS LABEL="Care Continuity Score";
+   YAXIS LABEL="Count of Participants";
+   TITLE "Participant Care Continuity Score Distribution";
+RUN;
+TITLE;
+
+/* 2.3 Bidirectional Relationship Strength */
+PROC SQL;
+   /* Creating a view of all provider combinations */
+   CREATE VIEW work.provider_pairs AS
+   SELECT 
+      a.provider_id AS provider1,
+      b.provider_id AS provider2
+   FROM 
+      (SELECT DISTINCT provider_id FROM work.participant_provider_history) a,
+      (SELECT DISTINCT provider_id FROM work.participant_provider_history) b
+   WHERE a.provider_id < b.provider_id;
+
+   /* Count transitions in both directions */
+   CREATE TABLE work.bidirectional_flow AS
+   SELECT
+      pairs.provider1,
+      pairs.provider2,
+      SUM(CASE WHEN t.from_provider = pairs.provider1 AND t.to_provider = pairs.provider2
+               THEN t.transition_count ELSE 0 END) AS forward_count,
+      SUM(CASE WHEN t.from_provider = pairs.provider2 AND t.to_provider = pairs.provider1
+               THEN t.transition_count ELSE 0 END) AS reverse_count,
+      CALCULATED forward_count + CALCULATED reverse_count AS total_transitions,
+      CASE 
+         WHEN CALCULATED forward_count = 0 OR CALCULATED reverse_count = 0 THEN 0
+         ELSE MIN(CALCULATED forward_count, CALCULATED reverse_count) / 
+              MAX(CALCULATED forward_count, CALCULATED reverse_count)
+      END AS bidirectional_balance
+   FROM work.provider_pairs pairs
+   LEFT JOIN work.provider_transitions t
+      ON (pairs.provider1 = t.from_provider AND pairs.provider2 = t.to_provider)
+      OR (pairs.provider2 = t.from_provider AND pairs.provider1 = t.to_provider)
+   GROUP BY pairs.provider1, pairs.provider2;
+QUIT;
+
+/* Visualize Bidirectional Flow */
+PROC SGPLOT DATA=work.bidirectional_flow;
+   SCATTER X=provider1 Y=provider2 / MARKERATTRS=(SYMBOL=SQUAREFILLED SIZE=15)
+          COLORRESPONSE=bidirectional_balance COLORMODEL=(RED YELLOW GREEN);
+   XAXIS LABEL="Provider 1" VALUES=(1 TO 4)
+         VALUESDISPLAY=('Family Practice' 'Internal Medicine' 'Cardiology' 'Orthopedics');
+   YAXIS LABEL="Provider 2" VALUES=(1 TO 4)
+         VALUESDISPLAY=('Family Practice' 'Internal Medicine' 'Cardiology' 'Orthopedics');
+   GRADLEGEND / TITLE="Balance Score";
+   TITLE "Bidirectional Balance Between Provider Pairs";
+RUN;
+TITLE;
+
+/* -------------------------------------------- */
+/* 3. PARTICIPANT JOURNEY INDICATORS            */
+/* -------------------------------------------- */
+
+/* 3.1 Journey Complexity Index */
+DATA work.journey_complexity;
+   SET work.participant_journey_summary;
+   
+   /* Create a weighted complexity score */
+   complexity_score = (number_of_providers * 0.4) + 
+                      (total_transitions * 0.3) + 
+                      (total_days_in_system / 30 * 0.3);
+                      
+   /* Classify based on complexity */
+   IF complexity_score < 3 THEN complexity_level = 'Low';
+   ELSE IF complexity_score < 6 THEN complexity_level = 'Medium';
+   ELSE complexity_level = 'High';
+RUN;
+
+/* Visualize Complexity Distribution */
+PROC SGPLOT DATA=work.journey_complexity;
+   VBAR complexity_level / DATALABEL;
+   XAXIS LABEL="Journey Complexity Level";
+   YAXIS LABEL="Count of Participants";
+   TITLE "Participant Journey Complexity Distribution";
+RUN;
+TITLE;
+
+/* Create complexity components chart */
+PROC SGPLOT DATA=work.journey_complexity;
+   SCATTER X=total_transitions Y=number_of_providers / 
+           MARKERATTRS=(SYMBOL=CIRCLEFILLED)
+           COLORRESPONSE=total_days_in_system DATALABEL=participant_id;
+   XAXIS LABEL="Number of Transitions";
+   YAXIS LABEL="Number of Providers";
+   GRADLEGEND / TITLE="Days in System";
+   TITLE "Journey Complexity Components";
+RUN;
+TITLE;
+
+/* 3.2 Provider Loyalty Index */
+PROC SQL;
+   CREATE TABLE work.provider_loyalty AS
+   SELECT 
+      participant_id,
+      MAX(visit_count) / SUM(visit_count) * 100 AS loyalty_index,
+      CASE
+         WHEN CALCULATED loyalty_index >= 75 THEN 'High Loyalty'
+         WHEN CALCULATED loyalty_index >= 50 THEN 'Medium Loyalty'
+         ELSE 'Low Loyalty'
+      END AS loyalty_level
+   FROM (
+      SELECT
+         participant_id,
+         provider_id,
+         COUNT(*) AS visit_count
+      FROM work.participant_provider_history
+      GROUP BY participant_id, provider_id
+   )
+   GROUP BY participant_id;
+QUIT;
+
+/* Visualize Provider Loyalty */
+PROC SGPLOT DATA=work.provider_loyalty;
+   HISTOGRAM loyalty_index / BINWIDTH=10 SHOWBINS;
+   DENSITY loyalty_index / TYPE=KERNEL;
+   REFLINE 50 / AXIS=X LINEATTRS=(PATTERN=2 COLOR=RED);
+   REFLINE 75 / AXIS=X LINEATTRS=(PATTERN=2 COLOR=GREEN);
+   XAXIS LABEL="Loyalty Index (%)" VALUES=(0 TO 100 BY 10);
+   YAXIS LABEL="Count of Participants";
+   TITLE "Provider Loyalty Index Distribution";
+RUN;
+TITLE;
+
+/* Create loyalty level pie chart */
+PROC GCHART DATA=work.provider_loyalty;
+   PIE loyalty_level / DISCRETE
+       VALUE=INSIDE
+       PERCENT=INSIDE
+       SLICE=OUTSIDE;
+   TITLE "Participant Loyalty Level Distribution";
+RUN;
+TITLE;
+
+/* 3.3 Cycling Pattern Detection */
+/* Create participant provider sequence */
+DATA work.participant_sequence;
+   SET work.participant_provider_history;
+   BY participant_id;
+   
+   RETAIN provider_seq '';
+   
+   IF FIRST.participant_id THEN provider_seq = PUT(provider_id, 1.);
+   ELSE provider_seq = CATX('', provider_seq, PUT(provider_id, 1.));
+   
+   IF LAST.participant_id THEN OUTPUT;
+   
+   KEEP participant_id provider_seq;
+RUN;
+
+/* Detect cycling patterns */
+DATA work.cycling_patterns;
+   SET work.participant_sequence;
+   
+   /* Look for repeating patterns */
+   length = LENGTH(provider_seq);
+   has_cycling = 0;
+   
+   /* Check for A-B-A pattern */
+   IF INDEX(provider_seq, '121') > 0 OR 
+      INDEX(provider_seq, '131') > 0 OR 
+      INDEX(provider_seq, '141') > 0 OR 
+      INDEX(provider_seq, '212') > 0 OR 
+      INDEX(provider_seq, '232') > 0 OR 
+      INDEX(provider_seq, '242') > 0 OR 
+      INDEX(provider_seq, '313') > 0 OR 
+      INDEX(provider_seq, '323') > 0 OR 
+      INDEX(provider_seq, '343') > 0 OR 
+      INDEX(provider_seq, '414') > 0 OR 
+      INDEX(provider_seq, '424') > 0 OR 
+      INDEX(provider_seq, '434') > 0 THEN has_cycling = 1;
+   
+   /* Check for A-B-A-B pattern */
+   IF INDEX(provider_seq, '1212') > 0 OR 
+      INDEX(provider_seq, '1313') > 0 OR 
+      INDEX(provider_seq, '1414') > 0 OR 
+      INDEX(provider_seq, '2121') > 0 OR 
+      INDEX(provider_seq, '2323') > 0 OR 
+      INDEX(provider_seq, '2424') > 0 OR 
+      INDEX(provider_seq, '3131') > 0 OR 
+      INDEX(provider_seq, '3232') > 0 OR 
+      INDEX(provider_seq, '3434') > 0 OR 
+      INDEX(provider_seq, '4141') > 0 OR 
+      INDEX(provider_seq, '4242') > 0 OR 
+      INDEX(provider_seq, '4343') > 0 THEN has_cycling = 2;
+RUN;
+
+/* Visualize Cycling Patterns */
+PROC SGPLOT DATA=work.cycling_patterns;
+   VBAR has_cycling / DATALABEL;
+   XAXIS LABEL="Cycling Pattern" 
+         VALUES=(0 1 2) 
+         VALUESDISPLAY=('No Cycling' 'Basic Cycling (A-B-A)' 'Complex Cycling (A-B-A-B)');
+   YAXIS LABEL="Count of Participants";
+   TITLE "Participant Cycling Pattern Detection";
+RUN;
+TITLE;
+
+/* -------------------------------------------- */
+/* 4. TEMPORAL INDICATORS                       */
+/* -------------------------------------------- */
+
+/* 4.1 Seasonal Transition Patterns */
+/* Prepare data with month names */
+DATA work.monthly_transitions;
+   SET work.participant_flow_patterns;
+   
+   LENGTH month_name $9;
+   IF month = 1 THEN month_name = 'January';
+   ELSE IF month = 2 THEN month_name = 'February';
+   ELSE IF month = 3 THEN month_name = 'March';
+   ELSE IF month = 4 THEN month_name = 'April';
+   ELSE IF month = 5 THEN month_name = 'May';
+   ELSE IF month = 6 THEN month_name = 'June';
+   ELSE IF month = 7 THEN month_name = 'July';
+   ELSE IF month = 8 THEN month_name = 'August';
+   ELSE IF month = 9 THEN month_name = 'September';
+   ELSE IF month = 10 THEN month_name = 'October';
+   ELSE IF month = 11 THEN month_name = 'November';
+   ELSE IF month = 12 THEN month_name = 'December';
+RUN;
+
+/* Create seasonal heat map */
+PROC SGPLOT DATA=work.monthly_transitions;
+   HEATMAP X=month_name Y=from_provider / COLORRESPONSE=monthly_transition_count;
+   XAXIS LABEL="Month" TYPE=DISCRETE;
+   YAXIS LABEL="From Provider" VALUES=(1 TO 4)
+         VALUESDISPLAY=('Family Practice' 'Internal Medicine' 'Cardiology' 'Orthopedics');
+   GRADLEGEND / TITLE="Transition Count";
+   TITLE "Monthly Transition Patterns by Provider";
+RUN;
+TITLE;
+
+/* 4.2 Provider Trend Analysis */
+PROC SQL;
+   CREATE TABLE work.provider_market_share AS
+   SELECT
+      YEAR(service_date) AS year,
+      MONTH(service_date) AS month,
+      provider_id,
+      COUNT(DISTINCT participant_id) AS unique_participants,
+      (CALCULATED unique_participants * 100.0) / 
+         (SELECT COUNT(DISTINCT participant_id) 
+          FROM work.participant_provider_history
+          WHERE YEAR(service_date) = CALCULATED year
+            AND MONTH(service_date) = CALCULATED month) AS market_share
+   FROM work.participant_provider_history
+   GROUP BY year, month, provider_id
+   ORDER BY year, month, provider_id;
+QUIT;
+
+/* Create a month sequence for better plotting */
+DATA work.provider_share_trend;
+   SET work.provider_market_share;
+   month_seq = (year - 2023) * 12 + month;
+RUN;
+
+/* Visualize Provider Market Share Trends */
+PROC SGPLOT DATA=work.provider_share_trend;
+   SERIES X=month_seq Y=market_share / GROUP=provider_id MARKERS;
+   XAXIS LABEL="Month" VALUES=(1 TO 12) 
+         VALUESDISPLAY=('Jan' 'Feb' 'Mar' 'Apr' 'May' 'Jun' 'Jul' 'Aug' 'Sep' 'Oct' 'Nov' 'Dec');
+   YAXIS LABEL="Market Share (%)" MIN=0;
+   KEYLEGEND / TITLE="Provider" POSITION=BOTTOM;
+   TITLE "Provider Market Share Trend Over Time";
+RUN;
+TITLE;
+
+/* 4.3 Transition Velocity */
+PROC SQL;
+   CREATE TABLE work.transition_velocity AS
+   SELECT
+      participant_id,
+      COUNT(DISTINCT provider_id) AS num_providers,
+      COUNT(CASE WHEN previous_provider_id IS NOT NULL AND 
+                     previous_provider_id NE provider_id 
+                THEN 1 ELSE NULL END) AS num_transitions,
+      MAX(service_date) - MIN(service_date) AS total_days,
+      CASE WHEN CALCULATED num_transitions > 0 
+           THEN CALCULATED total_days / CALCULATED num_transitions
+           ELSE . END AS days_per_transition
+   FROM work.participant_provider_history
+   GROUP BY participant_id;
+QUIT;
+
+/* Visualize Transition Velocity */
+PROC SGPLOT DATA=work.transition_velocity;
+   VBAR participant_id / RESPONSE=days_per_transition DATALABEL;
+   REFLINE 30 / LINEATTRS=(PATTERN=2 COLOR=RED);
+   XAXIS LABEL="Participant ID";
+   YAXIS LABEL="Days Per Transition";
+   TITLE "Participant Transition Velocity (Days per Transition)";
+RUN;
+TITLE;
+
+/* -------------------------------------------- */
+/* 5. NETWORK-BASED INDICATORS                  */
+/* -------------------------------------------- */
+
+/* 5.1 Provider Centrality */
+PROC SQL;
+   CREATE TABLE work.provider_centrality AS
+   SELECT
+      p.provider_id,
+      COALESCE((SELECT SUM(transition_count) FROM work.provider_transitions 
+                WHERE to_provider = p.provider_id), 0) AS incoming_transitions,
+      COALESCE((SELECT SUM(transition_count) FROM work.provider_transitions 
+                WHERE from_provider = p.provider_id), 0) AS outgoing_transitions,
+      CALCULATED incoming_transitions + CALCULATED outgoing_transitions AS total_connections,
+      CASE
+         WHEN CALCULATED incoming_transitions > CALCULATED outgoing_transitions 
+         THEN 'Receiver'
+         WHEN CALCULATED incoming_transitions < CALCULATED outgoing_transitions 
+         THEN 'Sender'
+         ELSE 'Balanced'
+      END AS provider_role
+   FROM (SELECT DISTINCT provider_id FROM work.participant_provider_history) p
+   ORDER BY total_connections DESC;
+QUIT;
+
+/* Visualize Provider Centrality */
+PROC SGPLOT DATA=work.provider_centrality;
+   HBAR provider_id / RESPONSE=incoming_transitions LEGENDLABEL="Incoming";
+   HBAR provider_id / RESPONSE=outgoing_transitions LEGENDLABEL="Outgoing" BARWIDTH=0.5;
+   YAXIS LABEL="Provider ID" VALUES=(1 TO 4) REVERSE 
+         VALUESDISPLAY=('Family Practice' 'Internal Medicine' 'Cardiology' 'Orthopedics');
+   XAXIS LABEL="Number of Transitions";
+   KEYLEGEND / TITLE="Transition Direction";
+   TITLE "Provider Network Centrality";
+RUN;
+TITLE;
+
+/* Create provider role chart */
+PROC SGPLOT DATA=work.provider_centrality;
+   HIGHLOW Y=provider_id LOW=incoming_transitions HIGH=outgoing_transitions / 
+           TYPE=LINE LINEATTRS=(THICKNESS=5);
+   SCATTER Y=provider_id X=incoming_transitions / 
+           MARKERATTRS=(SYMBOL=CIRCLEFILLED SIZE=12 COLOR=blue)
+           DATALABEL=incoming_transitions;
+   SCATTER Y=provider_id X=outgoing_transitions / 
+           MARKERATTRS=(SYMBOL=CIRCLEFILLED SIZE=12 COLOR=red)
+           DATALABEL=outgoing_transitions;
+   YAXIS LABEL="Provider ID" VALUES=(1 TO 4) 
+         VALUESDISPLAY=('Family Practice' 'Internal Medicine' 'Cardiology' 'Orthopedics');
+   XAXIS LABEL="Transitions";
+   TITLE "Provider Incoming vs Outgoing Transitions";
+RUN;
+TITLE;
+
+/* 5.2 Referral Communities (simple approach) */
+PROC CLUSTER DATA=work.provider_centrality METHOD=AVERAGE OUTTREE=work.provider_clusters;
+   VAR incoming_transitions outgoing_transitions;
+   ID provider_id;
+RUN;
+
+PROC TREE DATA=work.provider_clusters OUT=work.provider_community NCLUSTERS=2;
+   ID provider_id;
+RUN;
+
+PROC SORT DATA=work.provider_community;
+   BY provider_id;
+RUN;
+
+PROC SORT DATA=work.provider_centrality;
+   BY provider_id;
+RUN;
+
+DATA work.provider_community_final;
+   MERGE work.provider_community(RENAME=(CLUSTER=community))
+         work.provider_centrality;
+   BY provider_id;
+RUN;
+
+/* Visualize Provider Communities */
+PROC SGPLOT DATA=work.provider_community_final;
+   SCATTER X=incoming_transitions Y=outgoing_tra
