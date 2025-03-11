@@ -1,0 +1,342 @@
+/* 
+   Disaggregating Bulk Services in Participant Movement Analysis
+   
+   This code addresses the issue of providers submitting multiple services 
+   on the same date for a participant (bulk services)
+*/
+
+/* Assume the original data structure includes these additional fields:
+   - service_id: unique identifier for each service
+   - service_type: type of service provided
+   - service_code: specific code for the service
+   - service_amount: cost or quantity of service
+*/
+
+/* Step 1: Create a more detailed sample dataset with bulk services */
+DATA source.encounters_detailed;
+   INPUT participant_id provider_id service_date DATE9. service_id service_type $ service_code $ service_amount;
+   FORMAT service_date DATE9.;
+   DATALINES;
+101 1 01JAN2023 1001 PRIMARY A1234 125.00
+101 1 01JAN2023 1002 LAB L5678 75.50
+101 1 01JAN2023 1003 IMAGING I9012 350.00
+101 1 15FEB2023 1004 FOLLOWUP F3456 95.00
+101 2 10MAR2023 1005 CONSULT C7890 175.00
+101 2 10MAR2023 1006 LAB L1234 65.25
+101 3 05APR2023 1007 SPECIALIST S5678 225.00
+101 3 05APR2023 1008 PROCEDURE P9012 650.00
+101 3 05APR2023 1009 IMAGING I3456 275.50
+102 2 05JAN2023 2001 PRIMARY A7890 125.00
+102 2 05JAN2023 2002 LAB L1234 75.50
+102 2 20FEB2023 2003 FOLLOWUP F5678 95.00
+102 4 15MAR2023 2004 SPECIALIST S9012 200.00
+102 4 15MAR2023 2005 IMAGING I3456 275.50
+;
+RUN;
+
+/* Display the detailed sample data */
+TITLE "Sample Detailed Encounter Data with Bulk Services";
+PROC PRINT DATA=source.encounters_detailed;
+   FORMAT service_amount DOLLAR8.2;
+RUN;
+TITLE;
+
+/* -------------------------------------------------------- */
+/* APPROACH 1: USING SERVICE TYPE HIERARCHY                 */
+/* Prioritize certain service types to select one           */
+/* representative service per date                          */
+/* -------------------------------------------------------- */
+
+/* Step 2: Create service type priority mapping */
+DATA work.service_priority;
+   LENGTH service_type $ 10 description $ 50;
+   INPUT service_type $ priority description $40.;
+   DATALINES;
+PRIMARY    1 Primary Care Visit
+CONSULT    2 Consultation
+SPECIALIST 3 Specialist Visit
+PROCEDURE  4 Medical Procedure
+IMAGING    5 Imaging Services
+LAB        6 Laboratory Services
+FOLLOWUP   7 Follow-up Visit
+OTHER      8 Other Services
+;
+RUN;
+
+/* Step 3: Join encounters with priority and select representative service */
+PROC SQL;
+   CREATE TABLE work.encounters_representative AS
+   SELECT
+      e.*,
+      p.priority
+   FROM source.encounters_detailed e
+   LEFT JOIN work.service_priority p
+      ON e.service_type = p.service_type
+   ORDER BY
+      participant_id,
+      service_date,
+      priority;
+QUIT;
+
+/* Step 4: Keep only the highest priority service for each date */
+DATA work.encounters_disaggregated;
+   SET work.encounters_representative;
+   BY participant_id service_date priority;
+   IF FIRST.service_date;
+RUN;
+
+/* Display the disaggregated data using priority approach */
+TITLE "Disaggregated Encounters - Service Type Priority Approach";
+PROC PRINT DATA=work.encounters_disaggregated;
+   FORMAT service_amount DOLLAR8.2;
+RUN;
+TITLE;
+
+/* -------------------------------------------------------- */
+/* APPROACH 2: USING SERVICE AMOUNT                         */
+/* Select the service with the highest dollar amount        */
+/* as the representative service                            */
+/* -------------------------------------------------------- */
+
+PROC SQL;
+   CREATE TABLE work.encounters_primary_service AS
+   SELECT
+      participant_id,
+      provider_id,
+      service_date,
+      MAX(service_amount) AS max_amount
+   FROM source.encounters_detailed
+   GROUP BY
+      participant_id,
+      provider_id,
+      service_date;
+QUIT;
+
+PROC SQL;
+   CREATE TABLE work.encounters_by_amount AS
+   SELECT
+      e.*
+   FROM source.encounters_detailed e
+   INNER JOIN work.encounters_primary_service p
+      ON e.participant_id = p.participant_id
+         AND e.provider_id = p.provider_id
+         AND e.service_date = p.service_date
+         AND e.service_amount = p.max_amount;
+QUIT;
+
+/* Handle ties - if more than one service has max amount */
+DATA work.encounters_disaggregated_amount;
+   SET work.encounters_by_amount;
+   BY participant_id provider_id service_date;
+   IF FIRST.service_date;
+RUN;
+
+/* Display the disaggregated data using amount approach */
+TITLE "Disaggregated Encounters - Maximum Amount Approach";
+PROC PRINT DATA=work.encounters_disaggregated_amount;
+   FORMAT service_amount DOLLAR8.2;
+RUN;
+TITLE;
+
+/* -------------------------------------------------------- */
+/* APPROACH 3: TIME-SPLITTING APPROACH                      */
+/* Artificially separate services by small time increments  */
+/* -------------------------------------------------------- */
+
+DATA work.encounters_time_split;
+   SET source.encounters_detailed;
+   BY participant_id provider_id service_date;
+   
+   /* Add a counter for services on the same day */
+   IF FIRST.service_date THEN service_count = 0;
+   service_count + 1;
+   
+   /* Create a new datetime that adds hours to separate services */
+   service_datetime = DHMS(service_date, service_count-1, 0, 0);
+   FORMAT service_datetime DATETIME.;
+RUN;
+
+/* Display the time-split data */
+TITLE "Time-Split Encounters - Services Separated by Hours";
+PROC PRINT DATA=work.encounters_time_split;
+   FORMAT service_amount DOLLAR8.2;
+RUN;
+TITLE;
+
+/* -------------------------------------------------------- */
+/* APPROACH 4: SERVICE CATEGORIZATION                       */
+/* Track movement between service types rather than         */
+/* providers                                                */
+/* -------------------------------------------------------- */
+
+/* Step 1: Create participant-service type history */
+PROC SORT DATA=source.encounters_detailed OUT=work.encounters_sorted;
+   BY participant_id service_date service_id;
+RUN;
+
+DATA work.service_type_history;
+   SET work.encounters_sorted;
+   BY participant_id service_date;
+   
+   /* Use LAG to get previous service type */
+   prev_service_type = LAG(service_type);
+   prev_date = LAG(service_date);
+   
+   /* Reset when participant changes */
+   IF FIRST.participant_id THEN DO;
+      prev_service_type = '';
+      prev_date = .;
+   END;
+   
+   /* Calculate days since previous service */
+   days_since_previous = service_date - prev_date;
+   
+   /* Create a combined provider-service key */
+   provider_service = CATX('-', PUT(provider_id, 2.), service_type);
+   previous_provider_service = CATX('-', PUT(LAG(provider_id), 2.), prev_service_type);
+   
+   /* Reset when participant changes */
+   IF FIRST.participant_id THEN previous_provider_service = '';
+   
+   KEEP participant_id provider_id service_date service_type 
+        provider_service previous_provider_service days_since_previous;
+RUN;
+
+/* Display the service type transition history */
+TITLE "Service Type Transition History";
+PROC PRINT DATA=work.service_type_history;
+RUN;
+TITLE;
+
+/* Analyze service type transitions */
+PROC SQL;
+   CREATE TABLE work.service_type_transitions AS
+   SELECT
+      previous_provider_service AS from_service,
+      provider_service AS to_service,
+      COUNT(*) AS transition_count,
+      COUNT(DISTINCT participant_id) AS unique_participants,
+      AVG(days_since_previous) AS avg_days_between_transitions
+   FROM work.service_type_history
+   WHERE previous_provider_service NE ''
+      AND previous_provider_service NE provider_service
+   GROUP BY from_service, to_service
+   ORDER BY transition_count DESC;
+QUIT;
+
+/* Display service type transitions */
+TITLE "Provider-Service Type Transition Summary";
+PROC PRINT DATA=work.service_type_transitions;
+   FORMAT avg_days_between_transitions 5.1;
+RUN;
+TITLE;
+
+/* -------------------------------------------------------- */
+/* VISUALIZING DISAGGREGATED DATA                           */
+/* -------------------------------------------------------- */
+
+/* Visualize service type distribution by provider */
+PROC SGPLOT DATA=source.encounters_detailed;
+   VBAR service_type / GROUP=provider_id GROUPDISPLAY=CLUSTER;
+   XAXIS LABEL="Service Type";
+   YAXIS LABEL="Count of Services";
+   KEYLEGEND / TITLE="Provider ID";
+   TITLE "Service Type Distribution by Provider";
+RUN;
+TITLE;
+
+/* Visualize service type transitions using network graph */
+PROC SGPLOT DATA=work.service_type_transitions;
+   BUBBLE X=from_service Y=to_service SIZE=transition_count / 
+          DATALABEL=transition_count;
+   XAXIS LABEL="From Provider-Service";
+   YAXIS LABEL="To Provider-Service";
+   TITLE "Provider-Service Type Transition Network";
+RUN;
+TITLE;
+
+/* Create an enhanced participant timeline with service types */
+PROC SGPLOT DATA=work.service_type_history;
+   SERIES X=service_date Y=provider_service / GROUP=participant_id 
+           MARKERS MARKERATTRS=(SYMBOL=CIRCLEFILLED);
+   XAXIS LABEL="Service Date" TYPE=TIME;
+   YAXIS LABEL="Provider-Service Type" TYPE=DISCRETE;
+   KEYLEGEND / TITLE="Participant ID" POSITION=BOTTOM;
+   TITLE "Enhanced Participant Journey with Service Types";
+RUN;
+TITLE;
+
+/* -------------------------------------------------------- */
+/* INTEGRATING WITH ORIGINAL MOVEMENT ANALYSIS              */
+/* -------------------------------------------------------- */
+
+/* Use the disaggregated data for the movement analysis */
+/* In this example, we'll use the priority-based approach */
+
+/* Create a sorted dataset first */
+PROC SORT DATA=work.encounters_disaggregated 
+   OUT=work.sorted_encounters_clean;
+   BY participant_id service_date;
+RUN;
+
+/* Create a dataset with previous values using LAG function */
+DATA work.participant_provider_history_clean;
+   SET work.sorted_encounters_clean;
+   BY participant_id;
+   
+   /* Use LAG to get previous provider */
+   prev_provider = LAG(provider_id);
+   prev_date = LAG(service_date);
+   
+   /* Reset when participant changes */
+   IF FIRST.participant_id THEN DO;
+      prev_provider = .;
+      prev_date = .;
+   END;
+   
+   /* Store values with meaningful names */
+   previous_provider_id = prev_provider;
+   days_since_previous = service_date - prev_date;
+   
+   /* Keep only needed variables */
+   KEEP participant_id provider_id service_date service_type service_code
+        previous_provider_id days_since_previous;
+RUN;
+
+/* Generate provider transition summary with clean data */
+PROC SQL;
+   CREATE TABLE work.provider_transitions_clean AS
+   SELECT
+      previous_provider_id AS from_provider,
+      provider_id AS to_provider,
+      COUNT(*) AS transition_count,
+      COUNT(DISTINCT participant_id) AS unique_participants,
+      AVG(days_since_previous) AS avg_days_between_transitions,
+      MIN(days_since_previous) AS min_days_between_transitions,
+      MAX(days_since_previous) AS max_days_between_transitions
+   FROM work.participant_provider_history_clean
+   WHERE previous_provider_id IS NOT NULL
+      AND previous_provider_id NE provider_id
+   GROUP BY from_provider, to_provider
+   ORDER BY transition_count DESC;
+QUIT;
+
+/* Display provider transitions with clean data */
+TITLE "Provider Transition Summary with Disaggregated Data";
+PROC PRINT DATA=work.provider_transitions_clean;
+   FORMAT avg_days_between_transitions min_days_between_transitions max_days_between_transitions 5.1;
+RUN;
+TITLE;
+
+/* Compare the original vs. disaggregated transition patterns */
+TITLE "Visualizing Impact of Disaggregation on Transition Patterns";
+PROC SGPLOT DATA=work.provider_transitions_clean;
+   BUBBLE X=from_provider Y=to_provider SIZE=transition_count / 
+          DATALABEL=transition_count;
+   XAXIS LABEL="From Provider" VALUES=(1 TO 4)
+         VALUESDISPLAY=('Family Practice' 'Internal Medicine' 'Cardiology' 'Orthopedics');
+   YAXIS LABEL="To Provider" VALUES=(1 TO 4)
+         VALUESDISPLAY=('Family Practice' 'Internal Medicine' 'Cardiology' 'Orthopedics');
+   TITLE "Provider Transition Network with Disaggregated Data";
+RUN;
+TITLE;
