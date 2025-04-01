@@ -1,0 +1,125 @@
+Here's a revised version of the code that avoids subqueries and uses separate PROC SQL steps instead:
+
+```sas
+/* First, get total count of participants per provider */
+PROC SQL;
+    CREATE TABLE TEMP_PROVIDER_TOTAL_&FLAG. AS
+    SELECT 
+        PYMTRQSTPRVDRABN,
+        COUNT(DISTINCT PRSNWITHDSBLTYID) AS TOTAL_PARTICIPANTS,
+        &FLAG1. AS FLAG
+    FROM OUTPUT1.PAYMENTS_FINAL &FLAG.
+    WHERE PYMTRQSTPRVDRABN IS NOT MISSING
+    GROUP BY PYMTRQSTPRVDRABN;
+QUIT;
+
+/* Create a table that flags self-providing participants */
+PROC SQL;
+    CREATE TABLE TEMP_SELF_PROVIDERS_&FLAG. AS
+    SELECT DISTINCT
+        A.PRSNWITHDSBLTYID,
+        A.PYMTRQSTPRVDRABN,
+        'Y' AS IS_SELF_PROVIDER,
+        &FLAG1. AS FLAG
+    FROM OUTPUT1.PAYMENTS_FINAL &FLAG. AS A,
+         OUTPUT1.PAYMENTS_FINAL &FLAG. AS B
+    WHERE A.PRSNWITHDSBLTYID = B.PRSNWITHDSBLTYID
+    AND A.PYMTRQSTPRVDRABN = B.PRVDRABN;
+QUIT;
+
+/* Identify all participant-provider combinations */
+PROC SQL;
+    CREATE TABLE TEMP_ALL_PROVIDER_PARTICIPANT_&FLAG. AS
+    SELECT DISTINCT
+        PYMTRQSTPRVDRABN,
+        PRSNWITHDSBLTYID,
+        &FLAG1. AS FLAG
+    FROM OUTPUT1.PAYMENTS_FINAL &FLAG.
+    WHERE PYMTRQSTPRVDRABN IS NOT MISSING;
+QUIT;
+
+/* Left join to identify which participants are NOT self-providing */
+PROC SQL;
+    CREATE TABLE TEMP_PARTICIPANT_STATUS_&FLAG. AS
+    SELECT 
+        A.PYMTRQSTPRVDRABN,
+        A.PRSNWITHDSBLTYID,
+        CASE WHEN B.IS_SELF_PROVIDER = 'Y' THEN 1 ELSE 0 END AS IS_SELF_PROVIDER,
+        A.FLAG
+    FROM TEMP_ALL_PROVIDER_PARTICIPANT_&FLAG. A
+    LEFT JOIN TEMP_SELF_PROVIDERS_&FLAG. B
+        ON A.PRSNWITHDSBLTYID = B.PRSNWITHDSBLTYID
+        AND A.PYMTRQSTPRVDRABN = B.PYMTRQSTPRVDRABN;
+QUIT;
+
+/* Count participants who are NOT self-providing by provider */
+PROC SQL;
+    CREATE TABLE TEMP_NON_SELF_PROVIDING_&FLAG. AS
+    SELECT 
+        PYMTRQSTPRVDRABN,
+        SUM(CASE WHEN IS_SELF_PROVIDER = 0 THEN 1 ELSE 0 END) AS NON_SELF_PARTICIPANTS,
+        COUNT(*) AS TOTAL_PARTICIPANTS_CHECK,
+        &FLAG1. AS FLAG
+    FROM TEMP_PARTICIPANT_STATUS_&FLAG.
+    GROUP BY PYMTRQSTPRVDRABN;
+QUIT;
+
+/* Calculate the proportion */
+PROC SQL;
+    CREATE TABLE TEMP_PROVIDER_PROPORTIONS_&FLAG. AS
+    SELECT 
+        A.PYMTRQSTPRVDRABN,
+        A.TOTAL_PARTICIPANTS,
+        COALESCE(B.NON_SELF_PARTICIPANTS, 0) AS NON_SELF_PARTICIPANTS,
+        CASE 
+            WHEN A.TOTAL_PARTICIPANTS > 0 
+            THEN CALCULATED NON_SELF_PARTICIPANTS / A.TOTAL_PARTICIPANTS 
+            ELSE 0 
+        END AS PROPORTION_NON_SELF,
+        1 - CALCULATED PROPORTION_NON_SELF AS PROPORTION_SELF,
+        A.FLAG
+    FROM TEMP_PROVIDER_TOTAL_&FLAG. A
+    LEFT JOIN TEMP_NON_SELF_PROVIDING_&FLAG. B
+        ON A.PYMTRQSTPRVDRABN = B.PYMTRQSTPRVDRABN;
+QUIT;
+
+/* Join with previous analysis */
+PROC SQL;
+    CREATE TABLE RANDOM.TESTING10_&FLAG. AS
+    SELECT 
+        A.*,
+        B.TOTAL_PARTICIPANTS,
+        B.NON_SELF_PARTICIPANTS,
+        B.PROPORTION_NON_SELF,
+        B.PROPORTION_SELF
+    FROM TEMP_TESTING9_&FLAG. A
+    LEFT JOIN TEMP_PROVIDER_PROPORTIONS_&FLAG. B
+        ON A.COUNT_SELF_PLAN = B.PYMTRQSTPRVDRABN;
+QUIT;
+
+/* Create categories based on self-providing proportion */
+DATA RANDOM.TESTING_FINAL_&FLAG.;
+    SET RANDOM.TESTING10_&FLAG.;
+    LENGTH SELF_PROVISION_CATEGORY $30;
+    
+    IF NOT MISSING(PROPORTION_SELF) THEN DO;
+        IF PROPORTION_SELF = 0 THEN SELF_PROVISION_CATEGORY = 'No Self-Provision';
+        ELSE IF PROPORTION_SELF LE 0.25 THEN SELF_PROVISION_CATEGORY = 'Low Self-Provision (<=25%)';
+        ELSE IF PROPORTION_SELF LE 0.50 THEN SELF_PROVISION_CATEGORY = 'Medium Self-Provision (26-50%)';
+        ELSE IF PROPORTION_SELF LE 0.75 THEN SELF_PROVISION_CATEGORY = 'High Self-Provision (51-75%)';
+        ELSE SELF_PROVISION_CATEGORY = 'Very High Self-Provision (>75%)';
+    END;
+    ELSE SELF_PROVISION_CATEGORY = 'Unknown';
+RUN;
+```
+
+This approach:
+
+1. Uses separate tables and joins instead of subqueries
+2. First identifies all self-providing participants
+3. Creates a full list of provider-participant pairs 
+4. Joins these to determine self-provision status
+5. Aggregates to count non-self-providing participants by provider
+6. Calculates proportions and categorizes providers
+
+This method is more SAS-idiomatic and avoids the subquery structure while achieving the same result.
