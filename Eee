@@ -1,0 +1,123 @@
+# Updated Qlik Data Model - Monthly Category Payment Analysis
+
+## 1. Dim_Initiating_Provider (Unchanged)
+- **Dim_Initiating_Provider_Key** 🔑
+- REGPRVDRID
+- PRVDRLEGALNM
+- PRVDRABN
+- PRVDRTRDGNM
+- RGSTRTNGRUNM
+
+## 2. Dim_Claim (Enhanced with Monthly Grouping)
+- **Dim_Claim_Key** 🔑
+- **SUPPCLASS** 🏷️ *(Category field - links to payment amounts)*
+- **PYMTRQSTSUPPCATNM** 🏷️ *(Category field - links to payment amounts)*
+- SUPPSTRTDTADJ
+- SUPPENDTADJ
+- PYMTRQSTCRTDDT
+- RBAPYMTSENTDT *(original field preserved)*
+- RBAPYMTCLRDDT *(original field preserved)*
+- MGTTYPEDESC
+- **RBA_Cleared_Month** 📅 *(NEW: Month(RBAPYMTCLRDDT) - returns 1,2,3...12)*
+- **RBA_Cleared_MonthName** 📅 *(NEW: MonthName(RBAPYMTCLRDDT) - returns Jan, Feb, Mar...)*
+- **RBA_Sent_Month** 📅 *(NEW: Month(RBAPYMTSENTDT))*
+- **RBA_Sent_MonthName** 📅 *(NEW: MonthName(RBAPYMTSENTDT))*
+
+## 3. Fact_Provider_Participant_Claim (Unchanged - Values aggregated in expressions)
+- **Dim_Initiating_Provider_Key** 🔗
+- **Dim_Participant_Key** 🔗
+- **Dim_Claim_Key** 🔗
+- **PYMTAMT** 💰 *(Payment values for categories - aggregated by month)*
+- TAXAMT
+
+## 4. Dim_Participant (Unchanged)
+- **Dim_Participant_Key** 🔑
+- PRSNWITHDSBLTYID
+- SA3CD2021
+- RSDSINSTATECD
+- POSTCD
+- RSDSINMMCD
+- NDIAGEBND
+- GNDRTYP
+
+---
+
+## Load Script Changes
+
+```sql
+// Enhanced Dim_Claim table with monthly grouping fields
+Dim_Claim:
+LOAD *,
+     Month(RBAPYMTCLRDDT) as RBA_Cleared_Month,
+     MonthName(RBAPYMTCLRDDT) as RBA_Cleared_MonthName,
+     Month(RBAPYMTSENTDT) as RBA_Sent_Month,
+     MonthName(RBAPYMTSENTDT) as RBA_Sent_MonthName
+FROM [your_claim_source];
+```
+
+## Analysis Examples - Categories by Month
+
+### **Chart 1: Payment Amounts by Category and Month**
+```sql
+// Dimension 1: RBA_Cleared_MonthName (Jan, Feb, Mar...)
+// Dimension 2: SUPPCLASS
+// Expression: Sum(PYMTAMT)
+```
+
+### **Chart 2: Category Performance by Month**
+```sql
+// Dimension: RBA_Cleared_MonthName
+// Expression 1: Sum({<SUPPCLASS={'Category A'}>} PYMTAMT)
+// Expression 2: Sum({<SUPPCLASS={'Category B'}>} PYMTAMT)
+// Expression 3: Sum({<SUPPCLASS={'Category C'}>} PYMTAMT)
+```
+
+### **Chart 3: Monthly Breakdown Table**
+| Month | SUPPCLASS | PYMTRQSTSUPPCATNM | Total Payment |
+|-------|-----------|-------------------|---------------|
+| Jan   | Cat A     | Support Type 1    | $50,000       |
+| Jan   | Cat B     | Support Type 2    | $30,000       |
+| Feb   | Cat A     | Support Type 1    | $45,000       |
+| Feb   | Cat C     | Support Type 3    | $25,000       |
+
+## Key Analysis Queries
+
+```sql
+// Total payments by month for each category
+Sum(PYMTAMT)
+// Dimensions: RBA_Cleared_MonthName, SUPPCLASS
+
+// Which category has highest payments in each month?
+FirstSortedValue(SUPPCLASS, -Aggr(Sum(PYMTAMT), SUPPCLASS))
+// Dimension: RBA_Cleared_MonthName
+
+// Monthly trend for specific category
+Sum({<SUPPCLASS={'Your_Category'}>} PYMTAMT)
+// Dimension: RBA_Cleared_MonthName
+
+// Percentage of total payments by category per month
+Sum(PYMTAMT) / Sum(TOTAL <RBA_Cleared_MonthName> PYMTAMT)
+// Dimensions: RBA_Cleared_MonthName, SUPPCLASS
+```
+
+## Sample Output Structure
+
+**January Analysis:**
+- SUPPCLASS "Disability Support" → $125,000 in payments
+- SUPPCLASS "Therapy Services" → $87,000 in payments  
+- PYMTRQSTSUPPCATNM "Core Supports" → $95,000 in payments
+
+**February Analysis:**
+- SUPPCLASS "Disability Support" → $110,000 in payments
+- SUPPCLASS "Therapy Services" → $92,000 in payments
+- PYMTRQSTSUPPCATNM "Core Supports" → $88,000 in payments
+
+## Impact on Model
+
+✅ **Category-Month Relationship** - Each category's payment values grouped by cleared month  
+✅ **Preserved Granularity** - Can still drill down to individual transactions  
+✅ **Monthly Trending** - Track how category payments change month-to-month  
+✅ **Cross-Category Analysis** - Compare category performance within each month  
+✅ **All Relationships Intact** - No breaking changes to existing model structure
+
+This approach lets you analyze how your payment categories (`SUPPCLASS` and `PYMTRQSTSUPPCATNM`) perform across different months based on when RBA payments were cleared.
