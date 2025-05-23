@@ -1,0 +1,92 @@
+// Step 1: Create a temporary table to calculate total payments per provider
+Provider_Payment_Totals:
+LOAD 
+    PRVDRABN,
+    Sum(PYMTAMT) as Total_Payment_Amount
+FROM Fact_Provider_Participant_Claim F
+LEFT JOIN Dim_Initiating_Provider D ON F.Dim_Initiating_Provider_Key = D.Dim_Initiating_Provider_Key
+GROUP BY PRVDRABN;
+
+// Step 2: Create ranking mapping table
+Provider_Ranking_Map:
+LOAD 
+    PRVDRABN,
+    Total_Payment_Amount,
+    Rank(Total_Payment_Amount, 4) as Provider_Ranking  // 4 = descending order (highest payment = rank 1)
+RESIDENT Provider_Payment_Totals
+ORDER BY Total_Payment_Amount DESC;
+
+// Step 3: Create mapping for easy lookup
+Ranking_Mapping:
+MAPPING LOAD 
+    PRVDRABN,
+    Provider_Ranking
+RESIDENT Provider_Ranking_Map;
+
+// Step 4: Enhanced Dim_Initiating_Provider with Ranking field
+Dim_Initiating_Provider_Enhanced:
+LOAD *,
+     ApplyMap('Ranking_Mapping', PRVDRABN, 999) as Ranking,  // 999 = default for unmatched
+     ApplyMap('Provider_Payment_Totals', PRVDRABN, 0) as Total_Payment_Amount
+FROM Dim_Initiating_Provider;
+
+// Clean up temporary tables
+DROP TABLE Provider_Payment_Totals;
+DROP TABLE Provider_Ranking_Map;
+
+// Alternative: Single-step approach using Peek() function
+/*
+Dim_Initiating_Provider_Ranked:
+LOAD *,
+     // Create a temporary field for ranking calculation
+     If(RowNo() = 1, 1, 
+        If(Peek('Total_Payments') = Total_Payments, 
+           Peek('Ranking'), 
+           RowNo())) as Ranking
+FROM (
+    SELECT D.*,
+           SUM(F.PYMTAMT) as Total_Payments
+    FROM Dim_Initiating_Provider D
+    LEFT JOIN Fact_Provider_Participant_Claim F 
+        ON D.Dim_Initiating_Provider_Key = F.Dim_Initiating_Provider_Key
+    GROUP BY D.Dim_Initiating_Provider_Key, D.REGPRVDRID, D.PRVDRLEGALNM, D.PRVDRABN, D.PRVDRTRDGNM, D.RGSTRTNGRUNM
+    ORDER BY SUM(F.PYMTAMT) DESC
+);
+*/
+
+// Step 5: Verification query (optional - for testing)
+Provider_Ranking_Verification:
+LOAD 
+    PRVDRABN,
+    PRVDRLEGALNM,
+    Ranking,
+    Total_Payment_Amount,
+    'Rank ' & Ranking & ' - $' & Num(Total_Payment_Amount, '#,##0') as Ranking_Display
+RESIDENT Dim_Initiating_Provider_Enhanced
+WHERE Ranking <= 10  // Show top 10 for verification
+ORDER BY Ranking;
+
+// Final table structure
+Final_Dim_Initiating_Provider:
+LOAD 
+    Dim_Initiating_Provider_Key,
+    REGPRVDRID,
+    PRVDRLEGALNM,
+    PRVDRABN,
+    PRVDRTRDGNM,
+    RGSTRTNGRUNM,
+    Ranking,
+    Total_Payment_Amount,
+    // Additional ranking categories
+    If(Ranking <= 10, 'Top 10',
+       If(Ranking <= 50, 'Top 50',
+          If(Ranking <= 100, 'Top 100', 'Other'))) as Ranking_Category,
+    
+    // Percentile ranking
+    Ceil((Ranking / (SELECT Count(*) FROM Dim_Initiating_Provider_Enhanced)) * 100) as Ranking_Percentile
+    
+RESIDENT Dim_Initiating_Provider_Enhanced;
+
+// Drop intermediate table
+DROP TABLE Dim_Initiating_Provider_Enhanced;
+DROP TABLE Provider_Ranking_Verification;
