@@ -1,0 +1,114 @@
+# Mock Data Output - Provider Ranking Results
+
+## Sample Input Data
+
+### Fact_Provider_Participant_Claim (Sample transactions)
+| Dim_Initiating_Provider_Key | Dim_Participant_Key | Dim_Claim_Key | PYMTAMT | TAXAMT |
+|----------------------------|-------------------|---------------|---------|--------|
+| PROV001 | PART001 | CLM001 | 15000 | 1500 |
+| PROV001 | PART002 | CLM002 | 25000 | 2500 |
+| PROV001 | PART003 | CLM003 | 18000 | 1800 |
+| PROV002 | PART004 | CLM004 | 45000 | 4500 |
+| PROV002 | PART005 | CLM005 | 32000 | 3200 |
+| PROV003 | PART006 | CLM006 | 12000 | 1200 |
+| PROV003 | PART007 | CLM007 | 8000 | 800 |
+| PROV003 | PART008 | CLM008 | 22000 | 2200 |
+| PROV004 | PART009 | CLM009 | 55000 | 5500 |
+| PROV005 | PART010 | CLM010 | 28000 | 2800 |
+| PROV005 | PART011 | CLM011 | 33000 | 3300 |
+
+### Original Dim_Initiating_Provider
+| Dim_Initiating_Provider_Key | REGPRVDRID | PRVDRLEGALNM | PRVDRABN | PRVDRTRDGNM | RGSTRTNGRUNM |
+|----------------------------|------------|--------------|----------|-------------|--------------|
+| PROV001 | REG001 | Sunshine Disability Services | 12345678901 | Disability Support | SUNSHINE |
+| PROV002 | REG002 | Metro Therapy Group | 23456789012 | Allied Health | METRO |
+| PROV003 | REG003 | Community Care Partners | 34567890123 | Community Support | COMMUNITY |
+| PROV004 | REG004 | Premier Health Solutions | 45678901234 | Medical Services | PREMIER |
+| PROV005 | REG005 | Lifestyle Support Co | 56789012345 | Daily Living | LIFESTYLE |
+
+---
+
+## Step-by-Step Calculation Process
+
+### Step 1: Provider_Payment_Totals (Aggregation by PRVDRABN)
+| PRVDRABN | Total_Payment_Amount |
+|----------|---------------------|
+| 12345678901 | 58,000 | (15k + 25k + 18k)
+| 23456789012 | 77,000 | (45k + 32k)
+| 34567890123 | 42,000 | (12k + 8k + 22k)
+| 45678901234 | 55,000 | (55k)
+| 56789012345 | 61,000 | (28k + 33k)
+
+### Step 2: Provider_Ranking_Map (Ranked by Total Payments - Descending)
+| PRVDRABN | Total_Payment_Amount | Provider_Ranking |
+|----------|---------------------|------------------|
+| 23456789012 | 77,000 | **1** |
+| 56789012345 | 61,000 | **2** |
+| 12345678901 | 58,000 | **3** |
+| 45678901234 | 55,000 | **4** |
+| 34567890123 | 42,000 | **5** |
+
+---
+
+## Final Output: Enhanced Dim_Initiating_Provider Table
+
+| Dim_Initiating_Provider_Key | REGPRVDRID | PRVDRLEGALNM | PRVDRABN | PRVDRTRDGNM | RGSTRTNGRUNM | **Ranking** | **Total_Payment_Amount** | **Ranking_Category** | **Ranking_Percentile** |
+|----------------------------|------------|--------------|----------|-------------|--------------|-------------|-------------------------|---------------------|----------------------|
+| PROV002 | REG002 | Metro Therapy Group | 23456789012 | Allied Health | METRO | **1** | **$77,000** | Top 10 | 20 |
+| PROV005 | REG005 | Lifestyle Support Co | 56789012345 | Daily Living | LIFESTYLE | **2** | **$61,000** | Top 10 | 40 |
+| PROV001 | REG001 | Sunshine Disability Services | 12345678901 | Disability Support | SUNSHINE | **3** | **$58,000** | Top 10 | 60 |
+| PROV004 | REG004 | Premier Health Solutions | 45678901234 | Medical Services | PREMIER | **4** | **$55,000** | Top 10 | 80 |
+| PROV003 | REG003 | Community Care Partners | 34567890123 | Community Support | COMMUNITY | **5** | **$42,000** | Top 10 | 100 |
+
+---
+
+## Sample Chart Outputs
+
+### Chart 1: Top 5 Providers by Payment Amount
+```
+Metro Therapy Group          ████████████████████ $77,000 (Rank 1)
+Lifestyle Support Co         ████████████████     $61,000 (Rank 2)  
+Sunshine Disability Services ███████████████      $58,000 (Rank 3)
+Premier Health Solutions     ██████████████       $55,000 (Rank 4)
+Community Care Partners      ███████████          $42,000 (Rank 5)
+```
+
+### Chart 2: Provider Ranking Distribution
+| Ranking Category | Count | Total Payments |
+|------------------|-------|----------------|
+| Top 10 | 5 | $293,000 |
+| Top 50 | 0 | $0 |
+| Top 100 | 0 | $0 |
+| Other | 0 | $0 |
+
+### Chart 3: Ranking Analysis Table
+| Provider Name | ABN | Rank | Payments | Market Share |
+|---------------|-----|------|----------|--------------|
+| Metro Therapy Group | 23456789012 | 1 | $77,000 | 26.3% |
+| Lifestyle Support Co | 56789012345 | 2 | $61,000 | 20.8% |
+| Sunshine Disability Services | 12345678901 | 3 | $58,000 | 19.8% |
+| Premier Health Solutions | 45678901234 | 4 | $55,000 | 18.8% |
+| Community Care Partners | 34567890123 | 5 | $42,000 | 14.3% |
+
+---
+
+## Usage Examples in Qlik Charts
+
+### Expression Examples:
+```sql
+// Show top 3 providers only
+Sum({<Ranking={'<=3'}>} PYMTAMT)
+
+// Provider ranking display
+'Rank ' & Ranking & ': ' & PRVDRLEGALNM
+
+// Market leader indicator  
+If(Ranking = 1, '🏆 #1 Provider', 
+   If(Ranking <= 5, '⭐ Top 5', 'Other'))
+
+// Performance tier
+If(Total_Payment_Amount >= 70000, 'Premium Tier',
+   If(Total_Payment_Amount >= 50000, 'High Tier', 'Standard Tier'))
+```
+
+This ranking automatically updates when new payment data is loaded, maintaining accurate provider performance rankings based on total payment amounts.
