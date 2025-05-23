@@ -1,0 +1,85 @@
+// Enhanced Dim_Claim table with quarterly grouping fields
+Dim_Claim:
+LOAD *,
+     // RBA Cleared Date Quarterly Grouping
+     If(Month(RBAPYMTCLRDDT) >= 7 AND Month(RBAPYMTCLRDDT) <= 9,
+        'Q1_' & Year(RBAPYMTCLRDDT) & '-' & Right(Year(RBAPYMTCLRDDT) + 1, 2),
+        If(Month(RBAPYMTCLRDDT) >= 10 AND Month(RBAPYMTCLRDDT) <= 12,
+           'Q2_' & Year(RBAPYMTCLRDDT) & '-' & Right(Year(RBAPYMTCLRDDT) + 1, 2),
+           If(Month(RBAPYMTCLRDDT) >= 1 AND Month(RBAPYMTCLRDDT) <= 3,
+              'Q3_' & (Year(RBAPYMTCLRDDT) - 1) & '-' & Right(Year(RBAPYMTCLRDDT), 2),
+              If(Month(RBAPYMTCLRDDT) >= 4 AND Month(RBAPYMTCLRDDT) <= 6,
+                 'Q4_' & (Year(RBAPYMTCLRDDT) - 1) & '-' & Right(Year(RBAPYMTCLRDDT), 2),
+                 'Unknown_Quarter'
+              )
+           )
+        )
+     ) as RBA_Cleared_Quarter,
+     
+     // RBA Sent Date Quarterly Grouping  
+     If(Month(RBAPYMTSENTDT) >= 7 AND Month(RBAPYMTSENTDT) <= 9,
+        'Q1_' & Year(RBAPYMTSENTDT) & '-' & Right(Year(RBAPYMTSENTDT) + 1, 2),
+        If(Month(RBAPYMTSENTDT) >= 10 AND Month(RBAPYMTSENTDT) <= 12,
+           'Q2_' & Year(RBAPYMTSENTDT) & '-' & Right(Year(RBAPYMTSENTDT) + 1, 2),
+           If(Month(RBAPYMTSENTDT) >= 1 AND Month(RBAPYMTSENTDT) <= 3,
+              'Q3_' & (Year(RBAPYMTSENTDT) - 1) & '-' & Right(Year(RBAPYMTSENTDT), 2),
+              If(Month(RBAPYMTSENTDT) >= 4 AND Month(RBAPYMTSENTDT) <= 6,
+                 'Q4_' & (Year(RBAPYMTSENTDT) - 1) & '-' & Right(Year(RBAPYMTSENTDT), 2),
+                 'Unknown_Quarter'
+              )
+           )
+        )
+     ) as RBA_Sent_Quarter,
+     
+     // Simplified Quarter Number (1-4) for sorting
+     If(Month(RBAPYMTCLRDDT) >= 7 AND Month(RBAPYMTCLRDDT) <= 9, 1,
+        If(Month(RBAPYMTCLRDDT) >= 10 AND Month(RBAPYMTCLRDDT) <= 12, 2,
+           If(Month(RBAPYMTCLRDDT) >= 1 AND Month(RBAPYMTCLRDDT) <= 3, 3,
+              If(Month(RBAPYMTCLRDDT) >= 4 AND Month(RBAPYMTCLRDDT) <= 6, 4, 0
+              )
+           )
+        )
+     ) as RBA_Cleared_Quarter_Num,
+     
+     // Financial Year for additional grouping
+     If(Month(RBAPYMTCLRDDT) >= 7,
+        Year(RBAPYMTCLRDDT) & '-' & Right(Year(RBAPYMTCLRDDT) + 1, 2),
+        (Year(RBAPYMTCLRDDT) - 1) & '-' & Right(Year(RBAPYMTCLRDDT), 2)
+     ) as RBA_Cleared_FinancialYear
+
+FROM [your_claim_source];
+
+// Alternative cleaner approach using a mapping table
+Quarter_Mapping:
+MAPPING LOAD * INLINE [
+Month, Quarter, QuarterNum
+1, Q3, 3
+2, Q3, 3  
+3, Q3, 3
+4, Q4, 4
+5, Q4, 4
+6, Q4, 4
+7, Q1, 1
+8, Q1, 1
+9, Q1, 1
+10, Q2, 2
+11, Q2, 2
+12, Q2, 2
+];
+
+// Using the mapping approach (cleaner code)
+Dim_Claim_Alternative:
+LOAD *,
+     ApplyMap('Quarter_Mapping', Month(RBAPYMTCLRDDT), 'Unknown') & '_' &
+     If(Month(RBAPYMTCLRDDT) >= 7,
+        Year(RBAPYMTCLRDDT) & '-' & Right(Year(RBAPYMTCLRDDT) + 1, 2),
+        (Year(RBAPYMTCLRDDT) - 1) & '-' & Right(Year(RBAPYMTCLRDDT), 2)
+     ) as RBA_Cleared_Quarter_Clean,
+     
+     ApplyMap('Quarter_Mapping', Month(RBAPYMTSENTDT), 'Unknown') & '_' &
+     If(Month(RBAPYMTSENTDT) >= 7,
+        Year(RBAPYMTSENTDT) & '-' & Right(Year(RBAPYMTSENTDT) + 1, 2),
+        (Year(RBAPYMTSENTDT) - 1) & '-' & Right(Year(RBAPYMTSENTDT), 2)
+     ) as RBA_Sent_Quarter_Clean
+
+FROM [your_claim_source];
