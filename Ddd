@@ -1,0 +1,15 @@
+// Enhanced Dim_Claim table with financial year weekly grouping for RBA Sent Date
+Dim_Claim:
+LOAD *,
+     // Financial Year Week for RBA Sent Date: WK1_2024-25, WK2_2024-25, etc.
+     'WK' & 
+     If(Month(RBAPYMTSENTDT) >= 7,
+        Week(RBAPYMTSENTDT) - Week(MakeDate(Year(RBAPYMTSENTDT), 7, 1)) + 1,
+        Week(RBAPYMTSENTDT) + (52 - Week(MakeDate(Year(RBAPYMTSENTDT)-1, 7, 1)) + 1)
+     ) & '_' &
+     If(Month(RBAPYMTSENTDT) >= 7,
+        Year(RBAPYMTSENTDT) & '-' & Right(Year(RBAPYMTSENTDT) + 1, 2),
+        (Year(RBAPYMTSENTDT) - 1) & '-' & Right(Year(RBAPYMTSENTDT), 2)
+     ) as RBA_Sent_FinYear_Week
+
+FROM [your_claim_source];
