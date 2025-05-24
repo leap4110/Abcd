@@ -1,0 +1,22 @@
+// Universal quarterly grouping function for any financial year
+Dim_Claim:
+LOAD *,
+     // Create random date from FY 2024-25
+     Date(MakeDate(2024, 7, 1) + Floor(Rand() * 365), 'DD/MM/YYYY') as RBAPYMTSENTDT_RAND,
+     
+     // Universal quarterly grouping that works for any financial year
+     If(Month(RBAPYMTSENTDT_RAND) >= 7 AND Month(RBAPYMTSENTDT_RAND) <= 9,
+        'Q1_' & Year(RBAPYMTSENTDT_RAND) & '-' & Right(Year(RBAPYMTSENTDT_RAND) + 1, 2),
+        If(Month(RBAPYMTSENTDT_RAND) >= 10 AND Month(RBAPYMTSENTDT_RAND) <= 12,
+           'Q2_' & Year(RBAPYMTSENTDT_RAND) & '-' & Right(Year(RBAPYMTSENTDT_RAND) + 1, 2),
+           If(Month(RBAPYMTSENTDT_RAND) >= 1 AND Month(RBAPYMTSENTDT_RAND) <= 3,
+              'Q3_' & (Year(RBAPYMTSENTDT_RAND) - 1) & '-' & Right(Year(RBAPYMTSENTDT_RAND), 2),
+              If(Month(RBAPYMTSENTDT_RAND) >= 4 AND Month(RBAPYMTSENTDT_RAND) <= 6,
+                 'Q4_' & (Year(RBAPYMTSENTDT_RAND) - 1) & '-' & Right(Year(RBAPYMTSENTDT_RAND), 2),
+                 'Unknown_Quarter'
+              )
+           )
+        )
+     ) as RBAPYMTSENTDT_RAND_QUARTER
+
+FROM [your_claim_source];
