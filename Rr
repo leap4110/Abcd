@@ -1,0 +1,93 @@
+To create a map using SA3CD2021 in Qlik, you'll need to use Qlik's map visualization with Australian statistical area boundaries. Here's how:
+
+## Step 1: Load Australian SA3 Boundaries
+
+You'll need SA3 boundary data. Qlik can use:
+- **GeoJSON files** from Australian Bureau of Statistics
+- **KML files** with SA3 boundaries
+- **Built-in Qlik GeoAnalytics** (if available)
+
+## Step 2: Create the Map Chart
+
+### Chart Setup:
+1. **Chart Type:** Map
+2. **Add Layer:** Area layer
+3. **Data source:** Your fact table
+4. **Location field:** SA3CD2021
+
+### Dimensions and Measures:
+```sql
+// Dimension: SA3CD2021
+// Measure: Sum(PYMTAMT)
+// Optional: Count(DISTINCT Dim_Participant_Key) as participant count
+```
+
+## Step 3: Map Configuration
+
+### Basic Map Expression:
+```sql
+// Total payments by SA3
+Sum(PYMTAMT)
+
+// Participant count by SA3  
+Count(DISTINCT Dim_Participant_Key)
+
+// Average payment per participant by SA3
+Sum(PYMTAMT) / Count(DISTINCT Dim_Participant_Key)
+```
+
+### Color Expression (for heat map):
+```sql
+// Color areas by payment volume
+If(Sum(PYMTAMT) > 1000000, RGB(255,0,0),      // Red for high
+   If(Sum(PYMTAMT) > 500000, RGB(255,165,0),   // Orange for medium  
+      If(Sum(PYMTAMT) > 100000, RGB(255,255,0), // Yellow for low
+         RGB(200,200,200))))                    // Gray for minimal
+```
+
+## Step 4: Data Load for Boundaries
+
+```sql
+// Load SA3 boundary data (you'll need to source this file)
+SA3_Boundaries:
+LOAD 
+    SA3_CODE_2021 as SA3CD2021,
+    SA3_NAME_2021,
+    STATE_CODE_2021,
+    [Geometry] // GeoJSON boundary data
+FROM [lib://SA3_Boundaries_2021.geojson]
+(txt, codepage is 28591);
+```
+
+## Step 5: Alternative - Simple Point Map
+
+If you don't have boundary files:
+
+```sql
+// Use postcode centroid mapping
+Postcode_Locations:
+LOAD 
+    POSTCD,
+    Latitude,
+    Longitude  
+FROM [lib://Australian_Postcodes.csv];
+
+// Then create point map using:
+// Dimension: POSTCD (linked to your participant data)
+// Location: Latitude, Longitude fields
+// Measure: Sum(PYMTAMT)
+```
+
+## Required Files:
+
+1. **SA3 Boundaries:** Download from [Australian Bureau of Statistics](https://www.abs.gov.au/statistics/standards/australian-statistical-geography-standard-asgs-edition-3/jul2021-jun2026/access-and-downloads/digital-boundary-files)
+2. **Format:** GeoJSON or Shapefile
+3. **Field mapping:** Ensure SA3_CODE_2021 matches your SA3CD2021 field
+
+## Map Layers You Can Add:
+
+- **Base layer:** Participant locations (points)
+- **Area layer:** SA3 regions with payment totals (polygons)
+- **Heat map:** Payment density across regions
+
+The key is getting the correct SA3 boundary files and ensuring the SA3 codes match between your data and the geographic boundaries.
