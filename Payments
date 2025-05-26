@@ -1,0 +1,71 @@
+Here's how to create a KPI chart in Qlik that categorizes providers by payment amounts:
+
+## KPI Chart Expression:
+
+```sql
+Count(
+    DISTINCT 
+    If(Aggr(Sum(PYMTAMT), PRVDRABN) < 10000, PRVDRABN)
+) & ' Small Providers' & Chr(10) &
+Count(
+    DISTINCT 
+    If(Aggr(Sum(PYMTAMT), PRVDRABN) >= 10000 AND Aggr(Sum(PYMTAMT), PRVDRABN) < 200000, PRVDRABN)
+) & ' Medium Providers' & Chr(10) &
+Count(
+    DISTINCT 
+    If(Aggr(Sum(PYMTAMT), PRVDRABN) >= 200000, PRVDRABN)
+) & ' Large Providers'
+```
+
+## Alternative: Separate KPI Tiles
+
+### KPI 1 - Small Providers:
+```sql
+Count(DISTINCT {<PRVDRABN={"=Sum(PYMTAMT) < 10000"}>} PRVDRABN)
+```
+**Label:** "Small Providers (<$10K)"
+
+### KPI 2 - Medium Providers:
+```sql
+Count(DISTINCT {<PRVDRABN={"=Sum(PYMTAMT) >= 10000 AND Sum(PYMTAMT) < 200000"}>} PRVDRABN)
+```
+**Label:** "Medium Providers ($10K-$200K)"
+
+### KPI 3 - Large Providers:
+```sql
+Count(DISTINCT {<PRVDRABN={"=Sum(PYMTAMT) >= 200000"}>} PRVDRABN)
+```
+**Label:** "Large Providers ($200K+)"
+
+## Table Format (for detailed breakdown):
+
+### Dimensions:
+```sql
+// Create provider category field
+If(Aggr(Sum(PYMTAMT), PRVDRABN) < 10000, 'Small Provider',
+   If(Aggr(Sum(PYMTAMT), PRVDRABN) < 200000, 'Medium Provider', 
+      'Large Provider'))
+```
+
+### Expression:
+```sql
+Count(DISTINCT PRVDRABN)
+```
+
+## Expected KPI Output:
+```
+15 Small Providers
+8 Medium Providers  
+3 Large Providers
+```
+
+## Enhanced KPI with Percentages:
+```sql
+Count(DISTINCT {<PRVDRABN={"=Sum(PYMTAMT) < 10000"}>} PRVDRABN) & 
+' (' & 
+Round(100 * Count(DISTINCT {<PRVDRABN={"=Sum(PYMTAMT) < 10000"}>} PRVDRABN) / 
+Count(DISTINCT PRVDRABN), 1) & 
+'%) Small Providers'
+```
+
+This will show both the count and percentage of providers in each category based on their total payment amounts.
