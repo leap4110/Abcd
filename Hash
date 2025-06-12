@@ -1,0 +1,80 @@
+Looking at your SAS code, you're right to be concerned about performance with the `<>` (not equal) operators. Here are several more efficient approaches:
+
+## **Option 1: Use Hash Tables (Most Efficient)**
+```sas
+PROC SQL;
+    CREATE TABLE TEMPORARY_TEST3 AS
+    SELECT DISTINCT A.PRVDRABN
+        , SUM(A.PYMTAMT) AS TOTAL_PAYMENT3
+        , COUNT(DISTINCT A.PRSNWITHDSBSLTYID) AS COUNT2
+        , B.FLAG
+    FROM OUTPUT1.PAYMENTS_FINAL_&FLAG. AS A
+        INNER JOIN TEMPORARY_TEST2 AS B
+        ON A.PMTRQSTPRVDRABN = B.PRVDRABN
+        AND A.PRSNWITHDSBSLTYID = B.PRSNWITHDSBSLTYID
+    WHERE A.PMTRQSTPRVDRABN IS NOT NULL
+    GROUP BY A.PRVDRABN;
+QUIT;
+```
+
+## **Option 2: Use EXISTS Subquery**
+```sas
+PROC SQL;
+    CREATE TABLE TEMPORARY_TEST3 AS
+    SELECT DISTINCT A.PRVDRABN
+        , SUM(A.PYMTAMT) AS TOTAL_PAYMENT3
+        , COUNT(DISTINCT A.PRSNWITHDSBSLTYID) AS COUNT2
+        , B.FLAG
+    FROM OUTPUT1.PAYMENTS_FINAL_&FLAG. AS A
+        LEFT JOIN TEMPORARY_TEST2 AS B
+        ON A.PMTRQSTPRVDRABN = B.PRVDRABN
+        AND A.PRSNWITHDSBSLTYID = B.PRSNWITHDSBSLTYID
+    WHERE A.PMTRQSTPRVDRABN IS NOT NULL
+        AND EXISTS (
+            SELECT 1 FROM TEMPORARY_TEST2 T2
+            WHERE T2.PRVDRABN = A.PMTRQSTPRVDRABN
+                AND T2.PRSNWITHDSBSLTYID = A.PRSNWITHDSBSLTYID
+        )
+    GROUP BY A.PRVDRABN;
+QUIT;
+```
+
+## **Option 3: Data Step with Hash (Best for Very Large Data)**
+```sas
+DATA TEMPORARY_TEST3;
+    IF _N_ = 1 THEN DO;
+        DECLARE HASH H(DATASET: "TEMPORARY_TEST2");
+        H.DEFINEKEY("PRVDRABN", "PRSNWITHDSBSLTYID");
+        H.DEFINEDATA("FLAG");
+        H.DEFINEDONE();
+    END;
+    
+    SET OUTPUT1.PAYMENTS_FINAL_&FLAG.;
+    WHERE PMTRQSTPRVDRABN IS NOT NULL;
+    
+    IF H.FIND(KEY: PMTRQSTPRVDRABN, KEY: PRSNWITHDSBSLTYID) = 0 THEN DO;
+        OUTPUT;
+    END;
+RUN;
+
+PROC SUMMARY DATA=TEMPORARY_TEST3 NWAY;
+    CLASS PRVDRABN FLAG;
+    VAR PYMTAMT;
+    OUTPUT OUT=TEMPORARY_TEST3_FINAL 
+        SUM(PYMTAMT)=TOTAL_PAYMENT3
+        N(PRSNWITHDSBSLTYID)=COUNT2;
+RUN;
+```
+
+## **Key Performance Improvements:**
+
+1. **Inner Join Instead of Left Join + WHERE**: The inner join naturally excludes non-matching records without needing `<>` comparisons
+2. **Hash Tables**: For large datasets, hash lookups are much faster than repeated SQL comparisons
+3. **Eliminated Redundant Logic**: The original code was essentially doing an inner join but using a more complex left join approach
+
+## **Why This is Faster:**
+- **No `<>` operators**: These require scanning and comparing every non-matching combination
+- **Index-friendly joins**: Equality joins can use indexes effectively
+- **Reduced I/O**: Inner joins process fewer records through the pipeline
+
+The **Option 1 (Inner Join)** approach should give you the most immediate performance improvement with minimal code changes, while **Option 3 (Hash)** will be fastest for very large datasets.
