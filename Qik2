@@ -1,0 +1,37 @@
+No, those were Tableau expressions. For **Qlik Sense/QlikView**, here are the correct expressions:
+
+## Option 1: Show Count in Totals (Recommended)
+```
+If(Dimensionality() = 0, 
+    Count(DISTINCT [SA3 CODE (2021)]) & ' areas',
+    [SA3 CODE (2021)]
+)
+```
+
+## Option 2: Show Range in Totals
+```
+If(Dimensionality() = 0,
+    Min([SA3 CODE (2021)]) & '-' & Max([SA3 CODE (2021)]),
+    [SA3 CODE (2021)]
+)
+```
+
+## Option 3: Show All Codes Concatenated
+```
+If(Dimensionality() = 0,
+    'All: ' & Concat(DISTINCT [SA3 CODE (2021)], ', '),
+    [SA3 CODE (2021)]
+)
+```
+
+## Option 4: Simple Conditional (if you have a dimension identifying totals)
+```
+If([STATE] = 'Totals' or IsNull([STATE]),
+    Count(DISTINCT [SA3 CODE (2021)]) & ' areas',
+    [SA3 CODE (2021)]
+)
+```
+
+## Key Qlik Differences:
+- `Dimensionality()` instead of row type detection
+- `Count(DISTINCT field)` instead of
