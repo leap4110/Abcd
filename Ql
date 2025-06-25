@@ -1,0 +1,66 @@
+I understand! You want to keep all the individual SA3 codes (80108, 80110, etc.) displayed in their respective rows AND also show some kind of aggregate in the totals row. Here are the expressions to achieve this:
+
+## Option 1: Show Count in Totals (Recommended)
+Keep individual SA3 codes in detail rows, show count in totals:
+```
+IF ATTR([Row Type]) = "Total" THEN 
+    STR(COUNTD([SA3 CODE (2021)])) + " areas"
+ELSE 
+    STR([SA3 CODE (2021)])
+END
+```
+
+## Option 2: Show Range in Totals
+Keep individual codes, show range (min-max) in totals:
+```
+IF ATTR([Row Type]) = "Total" THEN 
+    STR(MIN([SA3 CODE (2021)])) + "-" + STR(MAX([SA3 CODE (2021)]))
+ELSE 
+    STR([SA3 CODE (2021)])
+END
+```
+
+## Option 3: Show All Codes Concatenated in Totals
+Keep individual codes, show all codes in totals row:
+```
+IF ATTR([Row Type]) = "Total" THEN 
+    "All: " + 
+    STR(MIN([SA3 CODE (2021)])) + ", " + 
+    "80105, 80106, 80108, 80109, 80110"
+ELSE 
+    STR([SA3 CODE (2021)])
+END
+```
+
+## Option 4: Dynamic Concatenation (Most Flexible)
+This will automatically list all SA3 codes in the totals:
+```
+IF ATTR([Row Type]) = "Total" THEN 
+    ATTR(
+        SUBSTITUTE(
+            SUBSTITUTE(
+                SUBSTITUTE(
+                    AGG(CONCATENATE([SA3 CODE (2021)], ",")), 
+                    ",,", ","
+                ), 
+                "^,", ""
+            ), 
+            ",$", ""
+        )
+    )
+ELSE 
+    STR([SA3 CODE (2021)])
+END
+```
+
+## Simple Approach (If you can't detect row type):
+If your system doesn't have a row type indicator, use:
+```
+IF ISNULL([STATE]) OR [STATE] = "Totals" THEN 
+    STR(COUNTD([SA3 CODE (2021)])) + " SA3 areas"
+ELSE 
+    STR([SA3 CODE (2021)])
+END
+```
+
+**Recommendation**: Start with **Option 1** as it's the clearest - it will show "7 areas" in your totals row while keeping the individual SA3 codes (80104, 80105, 80106, etc.) in their respective detail rows.
