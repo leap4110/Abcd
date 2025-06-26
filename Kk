@@ -1,0 +1,89 @@
+Yes, if it's a cardinality issue (many-to-many relationships causing duplicate counting), here are expressions to handle it:
+
+## Option 1: Using DISTINCT to Handle Cardinality
+```
+Sum(DISTINCT PYMTAMT)
+```
+
+## Option 2: Aggr with All Relevant Keys (Recommended)
+```
+Sum(Aggr(
+    Sum(DISTINCT PYMTAMT), 
+    PARTICIPANT_KEY, 
+    PAYMENT_ID
+))
+```
+
+## Option 3: Only() Function for 1-to-Many Relationships
+```
+Sum(Aggr(
+    Only(PYMTAMT), 
+    PAYMENT_ID
+))
+```
+
+## Option 4: Handling Multiple Fact Tables
+If you have cardinality between payments and disability tables:
+```
+Sum(Aggr(
+    Only({<PAYMENT_ID>} PYMTAMT), 
+    PAYMENT_ID
+))
+```
+
+## Option 5: FirstValue for Cardinality Issues
+```
+Sum(Aggr(
+    FirstValue(PYMTAMT), 
+    PAYMENT_ID
+))
+```
+
+## Option 6: Set Analysis to Break Associations
+```
+Sum({1<PAYMENT_ID = P(PAYMENT_ID)>} PYMTAMT)
+```
+
+## Option 7: Specific for NDIS Cardinality (Payment-Disability)
+```
+Sum(Aggr(
+    Sum({<PAYMENT_ID, PARTICIPANT_KEY>} DISTINCT PYMTAMT), 
+    PAYMENT_ID, 
+    PARTICIPANT_KEY
+))
+```
+
+## Option 8: Full Cardinality Control
+```
+Sum(Aggr(
+    Only({<PAYMENT_ID, PARTICIPANT_KEY, NDISDSBLTYGRPNM>} PYMTAMT), 
+    PAYMENT_ID
+))
+```
+
+## Option 9: Alternative Fact Table Approach
+If the issue is between fact tables:
+```
+Sum({<$Table={'PAYMENT_TABLE'}>} PYMTAMT)
+```
+
+## Diagnostic Expression to Check Cardinality:
+Test with this to see the issue:
+```
+// Check if payment amounts are duplicating
+Count(PYMTAMT) & ' records vs ' & 
+Count(DISTINCT PYMTAMT) & ' distinct amounts'
+```
+
+## Most Common Solution for NDIS Data:
+```
+Sum(Aggr(
+    Only(PYMTAMT), 
+    PAYMENT_ID,
+    PARTICIPANT_KEY
+))
+```
+
+**The key is identifying your grain level** - usually PAYMENT_ID is unique, so aggregating at that level with `Only()` or `DISTINCT` will resolve cardinality multiplication.
+
+Try **Option 2** first, then **Option 3** if you have a clear payment identifier that should be unique.
