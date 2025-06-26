@@ -1,0 +1,60 @@
+Here are Qlik expressions to select only the first disability when there's double counting:
+
+## Option 1: Using FirstSortedValue (Recommended)
+```
+FirstSortedValue(DISTINCT NDISDSBLTYGRPNM, NDISDSBLTYGRPNM)
+```
+
+## Option 2: Using Min to Get First Alphabetically
+```
+Min(NDISDSBLTYGRPNM)
+```
+
+## Option 3: Using FirstValue with Aggr
+```
+FirstValue(NDISDSBLTYGRPNM)
+```
+
+## For Your Payment Calculation:
+Instead of `SUM(PYMTAMT)`, use this to avoid double counting:
+
+```
+Sum(Aggr(
+    Sum(PYMTAMT), 
+    PARTICIPANT_KEY, 
+    FirstSortedValue(DISTINCT NDISDSBLTYGRPNM, NDISDSBLTYGRPNM)
+))
+```
+
+## Alternative - Create a Calculated Dimension:
+Create a new calculated dimension called "Primary Disability":
+
+```
+If(NDISDSBLTYGRPNM = 
+    Aggr(Min(NDISDSBLTYGRPNM), PARTICIPANT_KEY),
+    NDISDSBLTYGRPNM,
+    Null()
+)
+```
+
+## Most Practical Solution:
+Add this as a **flag field** in your data model (in the script):
+
+```
+// In your load script
+LOAD *,
+    If(NDISDSBLTYGRPNM = 
+        FirstSortedValue(NDISDSBLTYGRPNM, NDISDSBLTYGRPNM, 1),
+        1, 0) as PrimaryDisabilityFlag
+FROM your_table;
+```
+
+Then filter your visualizations where `PrimaryDisabilityFlag = 1`.
+
+## Quick Test Expression:
+To test if this fixes your totals, create a new measure:
+```
+Sum({<NDISDSBLTYGRPNM = {"$(=Min(NDISDSBLTYGRPNM))"}>} PYMTAMT)
+```
+
+The **FirstSortedValue** approach is usually most reliable as it gives you consistent results and allows you to specify the sort order for determining which disability is "first."
