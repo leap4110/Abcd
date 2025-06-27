@@ -80,3 +80,105 @@ If you want to show this in a table, create a calculated dimension:
             Fractile(TOTAL Aggr(Sum(pymtamt), [Your_Customer_Field]), 0.95),
             Fractile(TOTAL Aggr(Sum(pymtamt), [Your_Customer_Field]), 0.90),
             Fractile(
+
+
+
+
+Perfect! Here's the solution using `provider` as the field and `pymtamt` for payment amounts:
+
+## Step 1: Create Filter Pane with Inline Expression
+
+1. **Add a Filter Pane** to your sheet
+2. In the **Dimension** field, use this expression:
+
+```qlik
+=ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')
+```
+
+3. **Label**: "Provider Payment Quantile Filter"
+4. Make sure **Single select** is enabled
+
+## Step 2: Chart Expression for Filtering by Provider Payment Amount
+
+In your charts/tables, use this expression to apply the quantile filtering:
+
+```qlik
+If(
+    GetSelectedCount(ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')) = 0 OR
+    GetFieldSelections(ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')) = 'Show All',
+    Sum(pymtamt),
+    If(
+        Sum(pymtamt) >= 
+        Pick(
+            Match(GetFieldSelections(ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')),
+                  'Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%'),
+            Fractile(TOTAL Aggr(Sum(pymtamt), provider), 0.95),
+            Fractile(TOTAL Aggr(Sum(pymtamt), provider), 0.90),
+            Fractile(TOTAL Aggr(Sum(pymtamt), provider), 0.75),
+            Fractile(TOTAL Aggr(Sum(pymtamt), provider), 0.50),
+            Fractile(TOTAL Aggr(Sum(pymtamt), provider), 0.25)
+        ),
+        Sum(pymtamt)
+    )
+)
+```
+
+## Step 3: Set Analysis Version (More Efficient)
+
+```qlik
+Sum({<
+    provider = {
+        "=$(=If(
+            GetSelectedCount(ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')) = 0 OR
+            GetFieldSelections(ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')) = 'Show All',
+            '*',
+            'Aggr(Sum(pymtamt), provider) >= ' & 
+            Pick(
+                Match(GetFieldSelections(ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')),
+                      'Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%'),
+                Fractile(TOTAL Aggr(Sum(pymtamt), provider), 0.95),
+                Fractile(TOTAL Aggr(Sum(pymtamt), provider), 0.90),
+                Fractile(TOTAL Aggr(Sum(pymtamt), provider), 0.75),
+                Fractile(TOTAL Aggr(Sum(pymtamt), provider), 0.50),
+                Fractile(TOTAL Aggr(Sum(pymtamt), provider), 0.25)
+            )
+        ))"
+    }
+>} pymtamt)
+```
+
+## Step 4: For Provider Table/Chart Dimension
+
+If you want to show only providers in the selected quantile in a table:
+
+**Calculated Dimension:**
+```qlik
+=If(
+    GetSelectedCount(ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')) = 0 OR
+    GetFieldSelections(ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')) = 'Show All',
+    provider,
+    If(
+        Aggr(Sum(pymtamt), provider) >= 
+        Pick(
+            Match(GetFieldSelections(ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')),
+                  'Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%'),
+            Fractile(TOTAL Aggr(Sum(pymtamt), provider), 0.95),
+            Fractile(TOTAL Aggr(Sum(pymtamt), provider), 0.90),
+            Fractile(TOTAL Aggr(Sum(pymtamt), provider), 0.75),
+            Fractile(TOTAL Aggr(Sum(pymtamt), provider), 0.50),
+            Fractile(TOTAL Aggr(Sum(pymtamt), provider), 0.25)
+        ),
+        provider
+    )
+)
+```
+
+## How It Works:
+
+- **Top 5%**: Shows only providers whose total payment amount (`pymtamt`) is in the top 5% of all providers
+- **Top 10%**: Shows providers in the top 10% by payment amount
+- **Top 25%**: Shows providers in the top 25% by payment amount
+- **Show All**: Shows all providers (no filter)
+- **No selection**: Shows all providers (default)
+
+The expressions calculate quantiles based on each provider's total payment amount and filter accordingly. When a user selects "Top 5%" from the filter pane, only providers whose total payments rank in the top 5% will be displayed.
