@@ -1,0 +1,65 @@
+Here's the expression to create a filter pane for the top 5% of providers:
+
+## **Method 1: Using Calculated Dimension (Recommended)**
+
+Create a calculated dimension in your filter pane:
+
+```qlik
+=If(
+    Rank(Sum(YourMeasureField)) <= Ceil(Count(DISTINCT ABN_LEGAL_NM) * 0.05),
+    ABN_LEGAL_NM
+)
+```
+
+Replace `YourMeasureField` with your actual measure (e.g., revenue, volume, etc.)
+
+## **Method 2: Using Aggr Function**
+
+```qlik
+=If(
+    ABN_LEGAL_NM = Aggr(
+        If(Rank(Sum(YourMeasureField)) <= Ceil(Count(DISTINCT ABN_LEGAL_NM) * 0.05), 
+           ABN_LEGAL_NM), 
+        ABN_LEGAL_NM
+    ),
+    ABN_LEGAL_NM
+)
+```
+
+## **Method 3: In Load Script (Better Performance)**
+
+Add this to your load script:
+
+```qlik
+// Create a table with top 5% flag
+Top5Percent:
+LOAD 
+    ABN_LEGAL_NM,
+    If(Rank <= Ceil(MaxRank * 0.05), 'Top 5%', 'Others') as Top5PercentFlag
+FROM (
+    SELECT 
+        ABN_LEGAL_NM,
+        Rank(Sum(YourMeasureField)) as Rank,
+        Count(DISTINCT ABN_LEGAL_NM) as MaxRank
+    FROM YourTable
+    GROUP BY ABN_LEGAL_NM
+);
+```
+
+Then use `Top5PercentFlag` as your filter dimension.
+
+## **Method 4: Set Analysis Alternative**
+
+If you want this as a master item:
+
+```qlik
+=If(
+    Rank(Sum({<ABN_LEGAL_NM>} YourMeasureField)) <= 
+    Ceil(Count({<ABN_LEGAL_NM>} DISTINCT ABN_LEGAL_NM) * 0.05),
+    ABN_LEGAL_NM
+)
+```
+
+**Replace `YourMeasureField`** with whatever metric you're using to determine "top" providers (revenue, patient count, claims, etc.).
+
+Which method would work best for your use case?
