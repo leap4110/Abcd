@@ -1,0 +1,82 @@
+I'll show you how to create a quantile filter pane without using the data load editor, using expressions only.
+
+## Step 1: Create Filter Pane with Inline Expression
+
+1. **Add a Filter Pane** to your sheet
+2. In the **Dimension** field, use this expression:
+
+```qlik
+=ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')
+```
+
+3. **Label**: "Payment Quantile Filter"
+4. Make sure **Single select** is enabled
+
+## Step 2: Chart Expression for Filtering
+
+In your charts/tables, use this expression to apply the quantile filtering based on `pymtamt`:
+
+```qlik
+If(
+    GetSelectedCount(ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')) = 0 OR
+    GetFieldSelections(ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')) = 'Show All',
+    Sum(pymtamt),
+    If(
+        Sum(pymtamt) >= 
+        Pick(
+            Match(GetFieldSelections(ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')),
+                  'Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%'),
+            Fractile(TOTAL Aggr(Sum(pymtamt), [Your_Customer_Field]), 0.95),
+            Fractile(TOTAL Aggr(Sum(pymtamt), [Your_Customer_Field]), 0.90),
+            Fractile(TOTAL Aggr(Sum(pymtamt), [Your_Customer_Field]), 0.75),
+            Fractile(TOTAL Aggr(Sum(pymtamt), [Your_Customer_Field]), 0.50),
+            Fractile(TOTAL Aggr(Sum(pymtamt), [Your_Customer_Field]), 0.25)
+        ),
+        Sum(pymtamt)
+    )
+)
+```
+
+## Step 3: Simplified Version Using Set Analysis
+
+Replace `[Your_Customer_Field]` with your actual customer dimension field:
+
+```qlik
+Sum({<
+    [Your_Customer_Field] = {
+        "=$(=If(
+            GetSelectedCount(ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')) = 0 OR
+            GetFieldSelections(ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')) = 'Show All',
+            '*',
+            'Aggr(Sum(pymtamt), [Your_Customer_Field]) >= ' & 
+            Pick(
+                Match(GetFieldSelections(ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')),
+                      'Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%'),
+                Fractile(TOTAL Aggr(Sum(pymtamt), [Your_Customer_Field]), 0.95),
+                Fractile(TOTAL Aggr(Sum(pymtamt), [Your_Customer_Field]), 0.90),
+                Fractile(TOTAL Aggr(Sum(pymtamt), [Your_Customer_Field]), 0.75),
+                Fractile(TOTAL Aggr(Sum(pymtamt), [Your_Customer_Field]), 0.50),
+                Fractile(TOTAL Aggr(Sum(pymtamt), [Your_Customer_Field]), 0.25)
+            )
+        ))"
+    }
+>} pymtamt)
+```
+
+## Step 4: Alternative - Create as Calculated Dimension
+
+If you want to show this in a table, create a calculated dimension:
+
+```qlik
+=If(
+    GetSelectedCount(ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')) = 0 OR
+    GetFieldSelections(ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')) = 'Show All',
+    [Your_Customer_Field],
+    If(
+        Aggr(Sum(pymtamt), [Your_Customer_Field]) >= 
+        Pick(
+            Match(GetFieldSelections(ValueList('Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%', 'Show All')),
+                  'Top 5%', 'Top 10%', 'Top 25%', 'Top 50%', 'Top 75%'),
+            Fractile(TOTAL Aggr(Sum(pymtamt), [Your_Customer_Field]), 0.95),
+            Fractile(TOTAL Aggr(Sum(pymtamt), [Your_Customer_Field]), 0.90),
+            Fractile(
