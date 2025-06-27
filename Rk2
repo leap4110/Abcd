@@ -1,0 +1,54 @@
+Based on your data model, here's the expression for your filter pane to show top 5% of providers by payment amount:
+
+## **Filter Pane Expression:**
+
+```qlik
+=If(
+    Rank(Aggr(Sum(PYMTAMT), ABN_LEGAL_NM)) <= 
+    Ceil(Count(DISTINCT ABN_LEGAL_NM) * 0.05),
+    ABN_LEGAL_NM
+)
+```
+
+## **Alternative Method (if the above doesn't work):**
+
+```qlik
+=If(
+    ABN_LEGAL_NM = Aggr(
+        If(Rank(Sum({<ABN_LEGAL_NM>} PYMTAMT)) <= 
+           Ceil(Count(DISTINCT {<ABN_LEGAL_NM>} ABN_LEGAL_NM) * 0.05), 
+           ABN_LEGAL_NM), 
+        ABN_LEGAL_NM
+    ),
+    ABN_LEGAL_NM
+)
+```
+
+## **Script-based Solution (Better Performance):**
+
+Add this to your load script after your existing tables:
+
+```qlik
+Top5ProviderFlag:
+LOAD 
+    ABN_LEGAL_NM,
+    If(ProviderRank <= Ceil(TotalProviders * 0.05), 'Top 5%', 'Others') as Top5PercentFlag
+;
+LOAD 
+    ABN_LEGAL_NM,
+    Rank(TotalPayments, 4) as ProviderRank,
+    Count(DISTINCT ABN_LEGAL_NM) OVER() as TotalProviders
+;
+LOAD 
+    ABN_LEGAL_NM,
+    Sum(PYMTAMT) as TotalPayments
+RESIDENT Dim_Payment
+WHERE Len(ABN_LEGAL_NM) > 0
+GROUP BY ABN_LEGAL_NM;
+```
+
+Then in your filter pane, just use `Top5PercentFlag` as the dimension.
+
+**The script method is recommended** because it will perform better and you can simply use the `Top5PercentFlag` field in your filter pane instead of a complex calculated dimension.
+
+Since your tables are linked by `PROVIDER_KEY`, the association should work automatically in Qlik's data model.
