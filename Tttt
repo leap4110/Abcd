@@ -1,0 +1,23 @@
+Try these alternatives for checking non-blank values:
+
+**Option 1:**
+```qlik
+=If(Aggr(If(Sum(PYMTAMT) >= FRACTILE(TOTAL PYMTAMT, 0.75), ABN_LEGAL_NM), ABN_LEGAL_NM) AND Len(ABN_LEGAL_NM) > 0, 'Top 25%')
+```
+
+**Option 2:**
+```qlik
+=If(Aggr(If(Sum(PYMTAMT) >= FRACTILE(TOTAL PYMTAMT, 0.75), ABN_LEGAL_NM), ABN_LEGAL_NM) AND Not IsNull(ABN_LEGAL_NM), 'Top 25%')
+```
+
+**Option 3:**
+```qlik
+=If(Aggr(If(Sum(PYMTAMT) >= FRACTILE(TOTAL PYMTAMT, 0.75), ABN_LEGAL_NM), ABN_LEGAL_NM) AND ABN_LEGAL_NM <> Null(), 'Top 25%')
+```
+
+**Option 4 (Most robust):**
+```qlik
+=If(Aggr(If(Sum(PYMTAMT) >= FRACTILE(TOTAL PYMTAMT, 0.75), ABN_LEGAL_NM), ABN_LEGAL_NM) AND Len(Trim(ABN_LEGAL_NM)) > 0 AND Not IsNull(ABN_LEGAL_NM), 'Top 25%')
+```
+
+The issue might be that your blank values aren't actually empty strings - they could be spaces, nulls, or other characters. Try Option 4 first as it handles multiple types of "blank" values.
