@@ -1,0 +1,83 @@
+Since `PYMTAMT` is in the `Dim_Payment` table and `ABN_LEGAL_NM` is in the `Dim_Provider` table, here's how to create percentile boundary fields:
+
+## **Script Solution (Recommended):**
+
+```qlik
+// First, create a summary table with total payments per provider
+ProviderPaymentSummary:
+LOAD 
+    PROVIDER_KEY,
+    Sum(PYMTAMT) as TotalPaymentAmount
+RESIDENT Dim_Payment
+GROUP BY PROVIDER_KEY;
+
+// Then create percentile boundaries
+ProviderPercentiles:
+LOAD 
+    ABN_LEGAL_NM,
+    PROVIDER_KEY,
+    TotalPaymentAmount,
+    If(PercentileRank <= 0.05, '0-5%',
+       If(PercentileRank <= 0.10, '5-10%',
+          If(PercentileRank <= 0.15, '10-15%',
+             If(PercentileRank <= 0.20, '15-20%',
+                If(PercentileRank <= 0.25, '20-25%',
+                   If(PercentileRank <= 0.50, '25-50%',
+                      If(PercentileRank <= 0.75, '50-75%',
+                         If(PercentileRank <= 0.90, '75-90%',
+                            If(PercentileRank <= 0.95, '90-95%', '95-100%'))))))))) as ProviderPercentile
+;
+LOAD 
+    ABN_LEGAL_NM,
+    p.PROVIDER_KEY,
+    TotalPaymentAmount,
+    Rank(TotalPaymentAmount, 4) / Count(DISTINCT p.PROVIDER_KEY) as PercentileRank
+RESIDENT Dim_Provider p
+LEFT JOIN (ProviderPaymentSummary) s ON p.PROVIDER_KEY = s.PROVIDER_KEY
+WHERE Len(ABN_LEGAL_NM) > 0 AND TotalPaymentAmount > 0;
+
+// Clean up temporary table
+DROP TABLE ProviderPaymentSummary;
+```
+
+## **Alternative with More Granular Percentiles:**
+
+```qlik
+// For 5% increments (0-5%, 5-10%, 10-15%, etc.)
+ProviderPercentiles:
+LOAD 
+    ABN_LEGAL_NM,
+    PROVIDER_KEY,
+    TotalPaymentAmount,
+    '(' & (Floor(PercentileRank * 20) * 5) & '-' & 
+    (Floor(PercentileRank * 20) * 5 + 5) & '%)' as ProviderPercentile
+;
+LOAD 
+    ABN_LEGAL_NM,
+    p.PROVIDER_KEY,
+    Coalesce(TotalPaymentAmount, 0) as TotalPaymentAmount,
+    Rank(Coalesce(TotalPaymentAmount, 0), 4) / Count(DISTINCT p.PROVIDER_KEY) as PercentileRank
+RESIDENT Dim_Provider p
+LEFT JOIN (
+    LOAD 
+        PROVIDER_KEY,
+        Sum(PYMTAMT) as TotalPaymentAmount
+    RESIDENT Dim_Payment
+    GROUP BY PROVIDER_KEY
+) ON p.PROVIDER_KEY = PROVIDER_KEY
+WHERE Len(ABN_LEGAL_NM) > 0;
+```
+
+## **Usage:**
+After running this script, you'll have a new field called `ProviderPercentile` that you can use in:
+- Filter panes
+- Charts as dimensions
+- Set analysis expressions
+
+The field will contain values like:
+- "0-5%"
+- "5-10%"
+- "10-15%"
+- etc.
+
+This ranks providers by their total payment amounts and assigns them to percentile buckets based on their position in the rankings.
