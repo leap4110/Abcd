@@ -1,0 +1,131 @@
+I'll help you create a quantile-based filtering system in Qlik for payment percentages. Here's the complete end-to-end process:
+
+## Step 1: Create the Variable for Quantile Selection
+
+First, create a variable to store the selected quantile:
+1. Go to **Variable Overview** (Settings > Variable Overview)
+2. Click **Add** and create a variable named `vQuantileFilter`
+3. Set the default value to `1` (representing 100% - no filter)
+
+## Step 2: Create the Quantile Expression
+
+Use this expression in your charts to filter by quantiles:
+
+```qlik
+If(
+    Fractile(TOTAL Aggr(Sum(PaymentAmount), CustomerID), $(vQuantileFilter)) <= Sum(PaymentAmount),
+    Sum(PaymentAmount),
+    0
+)
+```
+
+Or for more complex scenarios where you want to show only the top X% customers:
+
+```qlik
+If(
+    Aggr(Sum(PaymentAmount), CustomerID) >= 
+    Fractile(TOTAL Aggr(Sum(PaymentAmount), CustomerID), 1-$(vQuantileFilter)),
+    Sum(PaymentAmount)
+)
+```
+
+## Step 3: Create the Filter Buttons
+
+### Option A: Individual Buttons
+Create separate buttons for each quantile:
+
+1. **Insert Button Object**: Right-click on sheet > Insert Sheet Object > Button
+2. **Configure each button**:
+
+**Top 5% Button:**
+- Text: "Top 5% Payments"
+- Actions: External > Set Variable
+- Variable: `vQuantileFilter`
+- Value: `0.05`
+
+**Top 25% Button:**
+- Text: "Top 25% Payments" 
+- Actions: External > Set Variable
+- Variable: `vQuantileFilter`
+- Value: `0.25`
+
+**Top 50% Button:**
+- Text: "Top 50% Payments"
+- Actions: External > Set Variable
+- Variable: `vQuantileFilter`
+- Value: `0.50`
+
+**Show All Button:**
+- Text: "Show All"
+- Actions: External > Set Variable
+- Variable: `vQuantileFilter`
+- Value: `1`
+
+### Option B: Dropdown/Listbox Approach
+1. Create an **Input Box** object
+2. Set Variable to `vQuantileFilter`
+3. Add constraint with values: `0.05;0.10;0.25;0.50;0.75;1`
+4. Or create an inline table in your script:
+
+```qlik
+QuantileOptions:
+LOAD * INLINE [
+QuantileValue, QuantileLabel
+0.05, Top 5%
+0.10, Top 10%
+0.25, Top 25%
+0.50, Top 50%
+0.75, Top 75%
+1, Show All
+];
+```
+
+## Step 4: Advanced Expression for Charts
+
+For a more sophisticated approach that shows percentile ranks:
+
+```qlik
+// This expression calculates the percentile rank of each customer
+Fractile(
+    TOTAL Aggr(Sum(PaymentAmount), CustomerID), 
+    Rank(Aggr(Sum(PaymentAmount), CustomerID)) / Count(TOTAL DISTINCT CustomerID)
+)
+```
+
+## Step 5: Set Analysis Alternative
+
+You can also use set analysis for more complex filtering:
+
+```qlik
+Sum({<CustomerID = {"=Aggr(Sum(PaymentAmount), CustomerID) >= Fractile(TOTAL Aggr(Sum(PaymentAmount), CustomerID), 1-$(vQuantileFilter))"}>} PaymentAmount)
+```
+
+## Step 6: Visual Enhancement
+
+Add conditional formatting to your buttons:
+- **Background Color Expression**: `If($(vQuantileFilter) = 0.05, RGB(0,150,0), RGB(200,200,200))`
+- This will highlight the active filter button
+
+## Complete Implementation Example
+
+Here's a complete button setup with actions:
+
+**Button Properties:**
+- **General Tab**: Set appropriate text and styling
+- **Actions Tab**: 
+  - Action Type: External
+  - Action: Set Variable
+  - Variable: `vQuantileFilter`
+  - Value: Your desired quantile (0.05, 0.25, etc.)
+
+**Chart Expression** (for tables/charts):
+```qlik
+If(
+    Rank(TOTAL Aggr(Sum(PaymentAmount), CustomerID), 4) <= 
+    Count(TOTAL DISTINCT CustomerID) * $(vQuantileFilter),
+    Sum(PaymentAmount),
+    null()
+)
+```
+
+This approach gives you dynamic filtering where users can easily switch between different quantile views of their payment data, showing only the top performers in each category.
