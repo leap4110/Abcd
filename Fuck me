@@ -1,0 +1,32 @@
+Looking at your expression, I can see it's designed to format numbers but doesn't show values under 1000. Here's the modified version that will display values under 1000:
+
+```
+=IF(COUNT(DISTINCT PARTICIPANT_KEY) >= 1000000
+, NUM(COUNT(DISTINCT PARTICIPANT_KEY)/1000000, '#,##0.0M')
+, IF(COUNT(DISTINCT PARTICIPANT_KEY) >= 1000
+, NUM(COUNT(DISTINCT PARTICIPANT_KEY)/1000, '#,##0.0K'
+, NUM(COUNT(DISTINCT PARTICIPANT_KEY), '#,##0')
+)))
+```
+
+## Key Changes:
+1. **Added a third condition** for values under 1000
+2. **Changed the middle condition** from `>= 1000` instead of `>= 1000` (this was likely your issue)
+3. **Added `NUM(COUNT(DISTINCT PARTICIPANT_KEY), '#,##0')`** to display raw numbers under 1000
+
+## What this does:
+- **≥ 1,000,000**: Shows as "1.5M", "2.3M", etc.
+- **≥ 1,000**: Shows as "1.2K", "5.7K", etc.  
+- **< 1,000**: Shows as "1", "25", "999", etc.
+
+## Alternative (if you want decimal places for small numbers):
+```
+=IF(COUNT(DISTINCT PARTICIPANT_KEY) >= 1000000
+, NUM(COUNT(DISTINCT PARTICIPANT_KEY)/1000000, '#,##0.0M')
+, IF(COUNT(DISTINCT PARTICIPANT_KEY) >= 1000
+, NUM(COUNT(DISTINCT PARTICIPANT_KEY)/1000, '#,##0.0K'
+, NUM(COUNT(DISTINCT PARTICIPANT_KEY), '#,##0.0')
+)))
+```
+
+This will show small numbers with one decimal place (like "25.0" instead of "25").
