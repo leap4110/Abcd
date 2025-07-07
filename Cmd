@@ -1,0 +1,171 @@
+Great question! You want to add a new worksheet to an existing Excel file rather than creating a completely new file. Here are the modified approaches:
+
+## Method 1: PowerShell with Existing Excel File
+
+```powershell
+# Define file paths
+$sourceFile = "C:\path\to\source.xlsx"
+$existingFile = "C:\path\to\existing.xlsx"
+$newSheetName = "ExtractedData"
+
+# Create Excel application object
+$excel = New-Object -ComObject Excel.Application
+$excel.Visible = $false
+
+try {
+    # Open source workbook
+    $sourceWorkbook = $excel.Workbooks.Open($sourceFile)
+    $sourceWorksheet = $sourceWorkbook.Worksheets.Item(1)
+    
+    # Extract data (example: copy range A1:D10)
+    $range = $sourceWorksheet.Range("A1:D10")
+    $data = $range.Value2
+    
+    # Open existing workbook
+    $existingWorkbook = $excel.Workbooks.Open($existingFile)
+    
+    # Add new worksheet
+    $newWorksheet = $existingWorkbook.Worksheets.Add()
+    $newWorksheet.Name = $newSheetName
+    
+    # Write data to new sheet
+    $newWorksheet.Range("A1").Resize($data.GetLength(0), $data.GetLength(1)).Value2 = $data
+    
+    # Save the existing workbook with new sheet
+    $existingWorkbook.Save()
+    
+    Write-Host "Data successfully added to new sheet '$newSheetName' in existing file"
+}
+finally {
+    # Clean up
+    $sourceWorkbook.Close()
+    $existingWorkbook.Close()
+    $excel.Quit()
+    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
+}
+```
+
+## Method 2: Python with Existing Excel File
+
+```python
+import pandas as pd
+from openpyxl import load_workbook
+
+# Read data from source file
+source_df = pd.read_excel('source.xlsx', sheet_name='Sheet1')
+
+# Filter or process data as needed
+# Example: filter rows where column A > 100
+filtered_df = source_df[source_df['ColumnA'] > 100]
+
+# Load existing workbook
+with pd.ExcelWriter('existing.xlsx', engine='openpyxl', mode='a', if_sheet_exists='new') as writer:
+    filtered_df.to_excel(writer, sheet_name='ExtractedData', index=False)
+
+print("Data added to new sheet 'ExtractedData' in existing file")
+```
+
+## Method 3: More Advanced Python with openpyxl
+
+```python
+import pandas as pd
+from openpyxl import load_workbook
+
+# Read source data
+source_df = pd.read_excel('source.xlsx')
+
+# Process data as needed
+processed_df = source_df  # Apply your filtering/processing here
+
+# Load existing workbook
+existing_file = 'existing.xlsx'
+book = load_workbook(existing_file)
+
+# Create new sheet name (handle duplicates)
+new_sheet_name = 'ExtractedData'
+counter = 1
+while new_sheet_name in book.sheetnames:
+    new_sheet_name = f'ExtractedData_{counter}'
+    counter += 1
+
+# Write dataframe to new sheet
+with pd.ExcelWriter(existing_file, engine='openpyxl', mode='a', if_sheet_exists='new') as writer:
+    writer.book = book
+    processed_df.to_excel(writer, sheet_name=new_sheet_name, index=False)
+
+print(f"Data added to new sheet '{new_sheet_name}' in existing file")
+```
+
+## Method 4: PowerShell with More Control
+
+```powershell
+param(
+    [string]$SourceFile = "C:\path\to\source.xlsx",
+    [string]$ExistingFile = "C:\path\to\existing.xlsx",
+    [string]$NewSheetName = "ExtractedData",
+    [string]$SourceRange = "A1:D10"
+)
+
+$excel = New-Object -ComObject Excel.Application
+$excel.Visible = $false
+
+try {
+    # Open files
+    $sourceWb = $excel.Workbooks.Open($SourceFile)
+    $existingWb = $excel.Workbooks.Open($ExistingFile)
+    
+    # Check if sheet name already exists and modify if needed
+    $originalName = $NewSheetName
+    $counter = 1
+    while ($existingWb.Worksheets | Where-Object {$_.Name -eq $NewSheetName}) {
+        $NewSheetName = "$originalName`_$counter"
+        $counter++
+    }
+    
+    # Copy data directly from source to new sheet in existing file
+    $sourceWs = $sourceWb.Worksheets.Item(1)
+    $sourceRange = $sourceWs.Range($SourceRange)
+    
+    # Add new worksheet to existing file
+    $newWs = $existingWb.Worksheets.Add()
+    $newWs.Name = $NewSheetName
+    
+    # Copy and paste data
+    $sourceRange.Copy()
+    $newWs.Range("A1").PasteSpecial(-4163)  # xlPasteAll
+    
+    # Save existing workbook
+    $existingWb.Save()
+    
+    Write-Host "Successfully added sheet '$NewSheetName' to existing file"
+}
+finally {
+    $sourceWb.Close()
+    $existingWb.Close()
+    $excel.Quit()
+}
+```
+
+## Command Line Usage:
+
+Save any of the PowerShell scripts as a `.ps1` file and run:
+
+```cmd
+powershell -ExecutionPolicy Bypass -File "extract_to_existing.ps1"
+```
+
+For Python, save as `.py` file and run:
+
+```cmd
+python extract_to_existing.py
+```
+
+## Key Differences from Previous Methods:
+
+1. **Opens existing file** instead of creating new one
+2. **Adds new worksheet** to existing workbook
+3. **Handles duplicate sheet names** automatically
+4. **Preserves existing data** in the target file
+5. **Only saves the existing workbook** (not source)
+
+The Python method with `mode='a'` (append) is particularly elegant as it automatically handles adding sheets to existing files without overwriting existing content.
