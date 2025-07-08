@@ -1,0 +1,29 @@
+Great question! In Qlik's dynamic environment, filtering to the latest date provides the most benefit in these scenarios:
+
+## **1. Default Starting View**
+- **Users expect current data first** - When they open the dashboard, they see the most recent snapshot rather than historical aggregates
+- **Reduces cognitive load** - No need to figure out "what time period am I looking at?"
+- **Faster initial insights** - Users can immediately see current performance
+
+## **2. Performance Optimization**
+- **Smaller data sets** - Filtering to latest period reduces calculation overhead
+- **Faster response times** - Especially important with large historical datasets
+- **Better user experience** - Dashboard loads and responds quicker
+
+## **3. Comparative Analysis Context**
+- **Meaningful baselines** - When users make selections, they're comparing against current period
+- **Trend analysis** - Users can select historical periods to see "how we got here"
+- **Period-over-period comparisons** - Latest period becomes the reference point
+
+## **4. Business Context**
+- **Current state reporting** - Most business decisions are based on current performance
+- **Actionable insights** - Recent data is more relevant for immediate action
+- **Data freshness** - Shows users they're looking at up-to-date information
+
+## **Alternative Approach:**
+Instead of hard-coding latest date, consider:
+```
+=COUNT({<ABN_LEGAL_NM>} DISTINCT PARTICIPANT_KEY) & ' participants (as of ' & Date(Max(DATE_FIELD), 'MMM YYYY') & ')'
+```
+
+This shows users what period they're viewing while maintaining Qlik's selection flexibility. The latest date filter works best when you want to establish a "current state" starting point that users can then explore from.
