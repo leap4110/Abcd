@@ -1,0 +1,25 @@
+Here are the two expressions you need:
+
+**Main expression (with text):**
+```
+=ALT(COUNT(DISTINCT PARTICIPANT_KEY), 0) & ' is out of ' & COUNT({1} TOTAL DISTINCT PARTICIPANT_KEY) & ' participants'
+```
+
+**Separate expression for total participants:**
+```
+=COUNT({1} TOTAL DISTINCT PARTICIPANT_KEY)
+```
+
+The key parts:
+- `COUNT(DISTINCT PARTICIPANT_KEY)` - your current count in the selection context
+- `COUNT({1} TOTAL DISTINCT PARTICIPANT_KEY)` - total participants ignoring all selections
+- `{1}` - set analysis that ignores all user selections
+- `TOTAL` - ensures the calculation is done across all data
+- `& ' is out of ' &` - concatenates the text between the numbers
+
+This will display something like: "25 is out of 150 participants"
+
+If you want the total to respect certain selections but ignore others, you can modify the set analysis. For example, to ignore only ABN_LEGAL_NM selections:
+```
+=ALT(COUNT(DISTINCT PARTICIPANT_KEY), 0) & ' is out of ' & COUNT({<ABN_LEGAL_NM>} TOTAL DISTINCT PARTICIPANT_KEY) & ' participants'
+```
