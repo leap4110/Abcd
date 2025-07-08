@@ -1,0 +1,30 @@
+Ah, I understand now! You want to exclude ALL payments from providers that have ANY CBCC payment. Here's how to modify your expression:
+
+## Method 1: Using Set Analysis (Most Efficient)
+```
+=Sum({<ProviderID -= {"=Sum(If(SUPPCATCD='CBCC', 1, 0)) > 0"}>} PaymentAmount)
+```
+
+## Method 2: Using If Statement with Aggr()
+```
+=Sum(If(Aggr(Sum(If(SUPPCATCD='CBCC', 1, 0)), ProviderID) = 0, PaymentAmount))
+```
+
+## Method 3: Alternative Set Analysis
+```
+=Sum({<ProviderID -= {">=$(=Min(If(SUPPCATCD='CBCC', ProviderID)))"}>} PaymentAmount)
+```
+
+## Method 4: Using NOT EXISTS
+```
+=Sum(If(NOT Exists(ProviderID & '|CBCC', ProviderID & '|' & If(SUPPCATCD='CBCC', 'CBCC')), PaymentAmount))
+```
+
+## Most Recommended:
+Method 1 is usually the most efficient. Just replace:
+- `ProviderID` with your actual provider field name
+- `PaymentAmount` with your actual payment field name
+
+The logic is: "Sum all payments, but exclude any provider that has at least one CBCC payment."
+
+What are the actual field names for your provider identifier and payment amount?
