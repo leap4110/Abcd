@@ -1,0 +1,33 @@
+To incorporate selecting participants with the most recent month/quarter, you need to add date filtering to your set analysis. Here are a few approaches depending on your date field name:
+
+**If you have a date field called `DATE` or `QUARTER_DATE`:**
+```
+=COUNT({<ABN_LEGAL_NM, DATE={$(=Max(DATE))}>} AGGR(ONLY(DISTINCT PARTICIPANT_KEY), PARTICIPANT_KEY))
+```
+
+**If you have separate year/quarter fields:**
+```
+=COUNT({<ABN_LEGAL_NM, YEAR={$(=Max(YEAR))}, QUARTER={$(=Max({<YEAR={$(=Max(YEAR))}>} QUARTER))}>} AGGR(ONLY(DISTINCT PARTICIPANT_KEY), PARTICIPANT_KEY))
+```
+
+**If you have a year-month field (like `YEAR_MONTH`):**
+```
+=COUNT({<ABN_LEGAL_NM, YEAR_MONTH={$(=Max(YEAR_MONTH))}>} AGGR(ONLY(DISTINCT PARTICIPANT_KEY), PARTICIPANT_KEY))
+```
+
+**Most flexible approach - if you want the latest quarter across all data:**
+```
+=COUNT({<ABN_LEGAL_NM, [YOUR_DATE_FIELD]={$(=Max([YOUR_DATE_FIELD]))}>} AGGR(ONLY(DISTINCT PARTICIPANT_KEY), PARTICIPANT_KEY))
+```
+
+**For the complete expression with text:**
+```
+=COUNT({<ABN_LEGAL_NM, [YOUR_DATE_FIELD]={$(=Max([YOUR_DATE_FIELD]))}>} DISTINCT PARTICIPANT_KEY) & ' is out of ' & COUNT({1, [YOUR_DATE_FIELD]={$(=Max({1} [YOUR_DATE_FIELD]))}>} TOTAL AGGR(ONLY(PARTICIPANT_KEY), PARTICIPANT_KEY)) & ' participants'
+```
+
+Replace `[YOUR_DATE_FIELD]` with your actual date field name. This will:
+1. Filter to only the most recent quarter/month in your data
+2. Count distinct participants for that period
+3. Show the total as "X is out of Y participants" where both X and Y are from the most recent period
+
+What's the name of your date/quarter field in the data model?
