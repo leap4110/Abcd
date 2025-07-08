@@ -1,0 +1,37 @@
+Since your date field is in text format, you have a few options depending on the text format:
+
+## **Option 1: If it's in a sortable format (like "2024-Q4", "2024-12", "Dec 2024")**
+```
+=COUNT({<ABN_LEGAL_NM, [YOUR_DATE_FIELD]={$(=Max([YOUR_DATE_FIELD]))}>} DISTINCT PARTICIPANT_KEY)
+```
+This works because Max() on text fields returns the alphabetically last value, which often corresponds to the latest date if formatted properly.
+
+## **Option 2: If it's in format like "Q4 2024", "December 2024", etc.**
+You may need to create a sorting field. Common approaches:
+
+**For quarterly data like "Q1 2023", "Q2 2023":**
+```
+=COUNT({<ABN_LEGAL_NM, [YOUR_DATE_FIELD]={$(=Max([YOUR_DATE_FIELD]))}>} DISTINCT PARTICIPANT_KEY)
+```
+Should work since "Q4 2024" > "Q1 2024" alphabetically.
+
+## **Option 3: If the text format doesn't sort properly**
+You might need to convert in the expression:
+
+**For "Dec 2024", "Jan 2024" format:**
+```
+=COUNT({<ABN_LEGAL_NM, [YOUR_DATE_FIELD]={$(=FirstSortedValue([YOUR_DATE_FIELD], -Date(Date#([YOUR_DATE_FIELD], 'MMM YYYY'))))}>} DISTINCT PARTICIPANT_KEY)
+```
+
+## **Best Practice Recommendation:**
+In your data model script, add a proper date field:
+```
+Date(Date#([YOUR_TEXT_DATE_FIELD], 'MMM YYYY')) as PROPER_DATE_FIELD
+```
+
+Then use:
+```
+=COUNT({<ABN_LEGAL_NM, PROPER_DATE_FIELD={$(=Max(PROPER_DATE_FIELD))}>} DISTINCT PARTICIPANT_KEY)
+```
+
+**What format is your text date field in?** (e.g., "Q4 2024", "Dec 2024", "2024-12", etc.) This will help me give you the most accurate solution.
