@@ -1,0 +1,21 @@
+I see the issue! The problem is that you have multiple records per participant (probably one record per ABN_LEGAL_NM per participant), so when you count distinct participants across all data, you're getting inflated numbers.
+
+You need to use AGGR to ensure you're counting each participant only once. Here's the corrected expression:
+
+**Main expression (with text):**
+```
+=ALT(COUNT(DISTINCT PARTICIPANT_KEY), 0) & ' is out of ' & COUNT({1} TOTAL AGGR(ONLY(PARTICIPANT_KEY), PARTICIPANT_KEY)) & ' participants'
+```
+
+**Separate expression for total participants:**
+```
+=COUNT({1} TOTAL AGGR(ONLY(PARTICIPANT_KEY), PARTICIPANT_KEY))
+```
+
+The key difference:
+- `COUNT({1} TOTAL AGGR(ONLY(PARTICIPANT_KEY), PARTICIPANT_KEY))` creates a virtual table with one row per unique PARTICIPANT_KEY, then counts those rows
+- This ensures each participant is counted only once, regardless of how many ABN_LEGAL_NM records they have
+
+This should give you the correct total of 565 participants, and each row will show "X is out of 565 participants" where X is the count of distinct participants for that specific ABN_LEGAL_NM.
+
+The AGGR approach handles the cardinality issue where participants might be associated with multiple ABN_LEGAL_NM values.
