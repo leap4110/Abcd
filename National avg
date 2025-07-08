@@ -1,0 +1,30 @@
+Good catch! Yes, if you have other filter panes (like state, region, category, etc.), the current expression **would** reflect those selections, which you don't want.
+
+To make it truly **only relative to time**, you need to explicitly ignore all other fields except your time field. Here's the corrected approach:
+
+**Option 1: If your time field is called `QUARTER` or `DATE_FIELD`:**
+```
+=COUNT(DISTINCT PARTICIPANT_KEY) / 
+ COUNT({<ABN_LEGAL_NM, STATE, REGION, CATEGORY>} TOTAL DISTINCT PARTICIPANT_KEY)
+```
+
+**Option 2: More robust - ignore everything except time:**
+```
+=COUNT(DISTINCT PARTICIPANT_KEY) / 
+ COUNT({1<[YOUR_TIME_FIELD]=$::[YOUR_TIME_FIELD]>} TOTAL DISTINCT PARTICIPANT_KEY)
+```
+
+**Option 3: If you know all your filter fields, list them explicitly:**
+```
+=COUNT(DISTINCT PARTICIPANT_KEY) / 
+ COUNT({<ABN_LEGAL_NM, STATE, REGION, CATEGORY, INDUSTRY>} TOTAL DISTINCT PARTICIPANT_KEY)
+```
+
+**What I'd recommend:**
+Tell me what your time field is called, and I'll give you the exact syntax. The key principle is:
+- **Numerator:** Respects all current selections (including time)
+- **Denominator:** Ignores all selections EXCEPT time selections
+
+This way your national average is truly "national for the selected time period" regardless of what other filters users apply.
+
+What's your time field name, and what other filter panes do you have?
