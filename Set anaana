@@ -1,0 +1,27 @@
+Ah, I see! You're using `AGGR(ONLY(DISTINCT PARTICIPANT_KEY), PARTICIPANT_KEY)` as a workaround for the cardinality issue with `COUNT(DISTINCT ...)`. The problem is that set analysis doesn't work directly inside AGGR the way you've written it.
+
+Here are the correct ways to apply set analysis with AGGR:
+
+**Option 1: Move set analysis outside AGGR (Recommended)**
+```
+=Count({<CABN_LEGAL_NM, STATE_2021, NDISDISBLTYGRPNM, SUPPRTCATCD, SUPPCAT, SUPPCLASS, SUPPCLASSCD, SA3_NAME_2021, SA3CD2021, MGTTYPEDESC_NEW, AGE_GROUP, ATSISTS, CALDSTS, MMM25>} AGGR(ONLY(DISTINCT PARTICIPANT_KEY), PARTICIPANT_KEY))
+```
+
+**Option 2: Use AGGR with all your excluded fields as dimensions**
+```
+=AGGR(ONLY({<CABN_LEGAL_NM, STATE_2021, NDISDISBLTYGRPNM, SUPPRTCATCD, SUPPCAT, SUPPCLASS, SUPPCLASSCD, SA3_NAME_2021, SA3CD2021, MGTTYPEDESC_NEW, AGE_GROUP, ATSISTS, CALDSTS, MMM25>} DISTINCT PARTICIPANT_KEY), [YourMapDimension])
+```
+
+**Option 3: Use AGGR with Count instead of Only**
+```
+=Sum(AGGR(Count({<CABN_LEGAL_NM, STATE_2021, NDISDISBLTYGRPNM, SUPPRTCATCD, SUPPCAT, SUPPCLASS, SUPPCLASSCD, SA3_NAME_2021, SA3CD2021, MGTTYPEDESC_NEW, AGE_GROUP, ATSISTS, CALDSTS, MMM25>} DISTINCT PARTICIPANT_KEY), [YourMapDimension]))
+```
+
+**Option 4: Use AGGR with the geographic dimension**
+```
+=AGGR(Count({<CABN_LEGAL_NM, STATE_2021, NDISDISBLTYGRPNM, SUPPRTCATCD, SUPPCAT, SUPPCLASS, SUPPCLASSCD, SA3_NAME_2021, SA3CD2021, MGTTYPEDESC_NEW, AGE_GROUP, ATSISTS, CALDSTS, MMM25>} DISTINCT PARTICIPANT_KEY), STATE_2021)
+```
+
+Replace `[YourMapDimension]` with whatever field you're using as your map dimension (likely `STATE_2021` or `SA3_NAME_2021`).
+
+**Option 1** is probably your best bet as it maintains your AGGR workaround while properly applying the set analysis.
