@@ -1,0 +1,32 @@
+Here are expressions to get the count distinct of three different field combinations:
+
+**Option 1: Simple COUNT DISTINCT with multiple fields**
+```
+=Count({<CABN_LEGAL_NM, STATE_2021, NDISDISBLTYGRPNM, SUPPRTCATCD, SUPPCAT, SUPPCLASS, SUPPCLASSCD, SA3_NAME_2021, SA3CD2021, MGTTYPEDESC_NEW, AGE_GROUP, ATSISTS, CALDSTS, MMM25>} DISTINCT PARTICIPANT_KEY & '|' & CABN_LEGAL_NM & '|' & STATE_2021)
+```
+
+**Option 2: Using AGGR for cardinality workaround**
+```
+=Count(AGGR(1, {<CABN_LEGAL_NM, STATE_2021, NDISDISBLTYGRPNM, SUPPRTCATCD, SUPPCAT, SUPPCLASS, SUPPCLASSCD, SA3_NAME_2021, SA3CD2021, MGTTYPEDESC_NEW, AGE_GROUP, ATSISTS, CALDSTS, MMM25>} PARTICIPANT_KEY, CABN_LEGAL_NM, STATE_2021))
+```
+
+**Option 3: Alternative concatenation approach**
+```
+=Count({<CABN_LEGAL_NM, STATE_2021, NDISDISBLTYGRPNM, SUPPRTCATCD, SUPPCAT, SUPPCLASS, SUPPCLASSCD, SA3_NAME_2021, SA3CD2021, MGTTYPEDESC_NEW, AGE_GROUP, ATSISTS, CALDSTS, MMM25>} DISTINCT PARTICIPANT_KEY & '#' & CABN_LEGAL_NM & '#' & STATE_2021)
+```
+
+**Option 4: Using hash function for better performance**
+```
+=Count({<CABN_LEGAL_NM, STATE_2021, NDISDISBLTYGRPNM, SUPPRTCATCD, SUPPCAT, SUPPCLASS, SUPPCLASSCD, SA3_NAME_2021, SA3CD2021, MGTTYPEDESC_NEW, AGE_GROUP, ATSISTS, CALDSTS, MMM25>} DISTINCT Hash128(PARTICIPANT_KEY & CABN_LEGAL_NM & STATE_2021))
+```
+
+**Option 5: If you want different field combinations, replace the three fields:**
+```
+=Count({<CABN_LEGAL_NM, STATE_2021, NDISDISBLTYGRPNM, SUPPRTCATCD, SUPPCAT, SUPPCLASS, SUPPCLASSCD, SA3_NAME_2021, SA3CD2021, MGTTYPEDESC_NEW, AGE_GROUP, ATSISTS, CALDSTS, MMM25>} DISTINCT PARTICIPANT_KEY & '|' & AGE_GROUP & '|' & SA3_NAME_2021)
+```
+
+**I recommend Option 2 (AGGR approach)** if you're having cardinality issues, as it avoids the concatenation overhead while still giving you the distinct count of the three-field combination.
+
+The `'|'` or `'#'` separators in the concatenation approaches help ensure that different combinations don't accidentally create the same concatenated string.
+
+Which three fields specifically do you want to use for the combination?
