@@ -1,0 +1,30 @@
+No, that expression **will NOT work** properly for excluding the fields in set analysis. The issue is that `AGGR(ONLY(DISTINCT PARTICIPANT_KEY), PARTICIPANT_KEY)` doesn't respect the set analysis modifiers the same way aggregation functions do.
+
+Here are the correct options that **will properly exclude the fields**:
+
+**Option 1: Use Max() with set analysis (Recommended)**
+```
+=Max({<CABN_LEGAL_NM, STATE_2021, NDISDISBLTYGRPNM, SUPPRTCATCD, SUPPCAT, SUPPCLASS, SUPPCLASSCD, SA3_NAME_2021, SA3CD2021, MGTTYPEDESC_NEW, AGE_GROUP, ATSISTS, CALDSTS, MMM25>} PARTICIPANT_KEY)
+```
+
+**Option 2: Use Min() with set analysis**
+```
+=Min({<CABN_LEGAL_NM, STATE_2021, NDISDISBLTYGRPNM, SUPPRTCATCD, SUPPCAT, SUPPCLASS, SUPPCLASSCD, SA3_NAME_2021, SA3CD2021, MGTTYPEDESC_NEW, AGE_GROUP, ATSISTS, CALDSTS, MMM25>} PARTICIPANT_KEY)
+```
+
+**Option 3: Use FirstSortedValue() with set analysis**
+```
+=FirstSortedValue({<CABN_LEGAL_NM, STATE_2021, NDISDISBLTYGRPNM, SUPPRTCATCD, SUPPCAT, SUPPCLASS, SUPPCLASSCD, SA3_NAME_2021, SA3CD2021, MGTTYPEDESC_NEW, AGE_GROUP, ATSISTS, CALDSTS, MMM25>} PARTICIPANT_KEY, PARTICIPANT_KEY)
+```
+
+**Option 4: Use Sum() with conditional logic**
+```
+=Sum({<CABN_LEGAL_NM, STATE_2021, NDISDISBLTYGRPNM, SUPPRTCATCD, SUPPCAT, SUPPCLASS, SUPPCLASSCD, SA3_NAME_2021, SA3CD2021, MGTTYPEDESC_NEW, AGE_GROUP, ATSISTS, CALDSTS, MMM25>} If(RowNo()=1, PARTICIPANT_KEY))
+```
+
+**Option 5: If you want to display the company name instead**
+```
+=Max({<CABN_LEGAL_NM, STATE_2021, NDISDISBLTYGRPNM, SUPPRTCATCD, SUPPCAT, SUPPCLASS, SUPPCLASSCD, SA3_NAME_2021, SA3CD2021, MGTTYPEDESC_NEW, AGE_GROUP, ATSISTS, CALDSTS, MMM25>} CABN_LEGAL_NM)
+```
+
+**I recommend Option 1 (Max)** as it's the most straightforward and will properly respect your set analysis field exclusions while forcing a 1:1 relationship by selecting just one value.
