@@ -1,0 +1,202 @@
+/* Step 1: Import the Excel file containing support item mappings */
+proc import datafile="path/to/your/support_item_mapping.xlsx"
+    out=support_item_service_type_lookup
+    dbms=xlsx
+    replace;
+    sheet="Sheet1";  /* Adjust sheet name as needed */
+    getnames=yes;
+    datarow=2;
+run;
+
+/* Step 2: Clean up column names and assign service type categories */
+data support_item_service_type_lookup;
+    set support_item_service_type_lookup;
+    
+    /* Rename columns to standard names if they differ */
+    rename support_line_item = support_item_number;
+    
+    /* Create service_type_registration_group_name based on ABC column first, then support item patterns */
+    length service_type_registration_group_name $50;
+    
+    /* Priority 1: Check ABC column for 'SIL' text first */
+    if index(upcase(ABC), 'SIL') > 0 then
+        service_type_registration_group_name = 'SIL';
+    
+    /* Priority 2: If no SIL in ABC column, use support item patterns */
+    /* SIL - Supported Independent Living (01_0xx_0115_1_1 pattern) */
+    else if index(support_line_item, '01_') = 1 and index(support_line_item, '_0115_1_1') > 0 then
+        service_type_registration_group_name = 'SIL';
+    
+    /* Personal Care (01_0xx_0107_1_1 pattern) */
+    else if index(support_line_item, '01_') = 1 and index(support_line_item, '_0107_1_1') > 0 then
+        service_type_registration_group_name = 'Personal Care';
+    
+    /* Community Participation (01_0xx_0104_1_1 pattern) */
+    else if index(support_line_item, '01_') = 1 and index(support_line_item, '_0104_1_1') > 0 then
+        service_type_registration_group_name = 'Community Participation';
+    
+    /* Therapeutic Support - OT (15_0xx_0125_6_1 pattern) */
+    else if index(support_line_item, '15_') = 1 and index(support_line_item, '_0125_6_1') > 0 then
+        service_type_registration_group_name = 'Therapeutic Support - OT';
+    
+    /* Therapeutic Support - Other (15_0xx_0128_6_1 pattern) */
+    else if index(support_line_item, '15_') = 1 and index(support_line_item, '_0128_6_1') > 0 then
+        service_type_registration_group_name = 'Therapeutic Support - Other';
+    
+    /* Capital (03_0xx_0116_2_1 pattern) */
+    else if index(support_line_item, '03_') = 1 and index(support_line_item, '_0116_2_1') > 0 then
+        service_type_registration_group_name = 'Capital';
+    
+    /* Other - catch all for unmatched patterns */
+    else service_type_registration_group_name = 'Other';
+    
+run;
+
+/* Step 2: Create lookup table for registered quarter by ABN */
+proc sql;
+   create table abn_registered_quarter_lookup as
+   select 
+      abn,
+      min(quarter) as registered_quarter
+   from your_source_table
+   where registration_status in ('Active', 'Registered', 'Current')
+   group by abn;
+quit;
+
+/* Step 3: Create the base query using both lookup tables */
+proc sql;
+   create table payment_summary as
+   select 
+      p.abn,
+      p.legal_name,
+      p.registration_status,
+      r.registered_quarter,
+      p.entity_type,
+      coalesce(s.service_type_registration_group_name, 'Unknown') as service_type,
+      p.quarter,
+      sum(p.payment_amount) as total_payment
+   from your_source_table p
+   left join abn_registered_quarter_lookup r on p.abn = r.abn
+   left join support_item_service_type_lookup s on p.support_item_number = s.support_item_number
+   where p.payment_amount is not null
+   group by p.abn, p.legal_name, p.registration_status, r.registered_quarter, p.entity_type, 
+            calculated service_type, p.quarter
+   order by p.abn, service_type, p.quarter;
+quit;
+
+/* Step 4: Transpose the data to get quarters as columns */
+proc transpose data=payment_summary out=payment_transposed prefix=Q_;
+   by abn legal_name registration_status registered_quarter entity_type service_type;
+   id quarter;
+   var total_payment;
+run;
+
+/* Step 5: Clean up and format the final table */
+proc sql;
+   create table table1_provider_payment_breakdown as
+   select 
+      abn,
+      legal_name as "Legal Name",
+      registration_status as "Registration Status",
+      registered_quarter as "Registered Quarter",
+      entity_type as "Entity Type",
+      service_type as "Service Type (Registration Group Name)",
+      coalesce(Q_Mar_22, 0) as "Mar-22",
+      coalesce(Q_Jun_22, 0) as "Jun-22", 
+      coalesce(Q_Sep_22, 0) as "Sep-22",
+      coalesce(Q_Dec_22, 0) as "Dec-22",
+      coalesce(Q_Mar_23, 0) as "Mar-23",
+      coalesce(Q_Jun_23, 0) as "Jun-23"
+   from payment_transposed
+   order by abn, service_type;
+quit;
+
+/* BIG DATA OPTIMIZED VERSION */
+
+/* Step 1: Import Excel and create indexed lookup table */
+proc import datafile="path/to/your/support_item_mapping.xlsx"
+    out=support_item_temp
+    dbms=xlsx
+    replace;
+    sheet="Sheet1";
+    getnames=yes;
+    datarow=2;
+run;
+
+/* Step 2: Create optimized lookup table with index */
+data support_item_service_type_lookup;
+    set support_item_temp;
+    rename support_line_item = support_item_number;
+    length service_type_registration_group_name $50;
+    
+    if index(upcase(ABC), 'SIL') > 0 then
+        service_type_registration_group_name = 'SIL';
+    else if index(support_line_item, '01_') = 1 and index(support_line_item, '_0115_1_1') > 0 then
+        service_type_registration_group_name = 'SIL';
+    else if index(support_line_item, '01_') = 1 and index(support_line_item, '_0107_1_1') > 0 then
+        service_type_registration_group_name = 'Personal Care';
+    else if index(support_line_item, '01_') = 1 and index(support_line_item, '_0104_1_1') > 0 then
+        service_type_registration_group_name = 'Community Participation';
+    else if index(support_line_item, '15_') = 1 and index(support_line_item, '_0125_6_1') > 0 then
+        service_type_registration_group_name = 'Therapeutic Support - OT';
+    else if index(support_line_item, '15_') = 1 and index(support_line_item, '_0128_6_1') > 0 then
+        service_type_registration_group_name = 'Therapeutic Support - Other';
+    else if index(support_line_item, '03_') = 1 and index(support_line_item, '_0116_2_1') > 0 then
+        service_type_registration_group_name = 'Capital';
+    else service_type_registration_group_name = 'Other';
+run;
+
+/* Create index on lookup table for faster joins */
+proc sql;
+    create index support_item_idx on support_item_service_type_lookup(support_item_number);
+quit;
+
+/* Step 3: MOST EFFICIENT - Single pass conditional aggregation with hash lookup */
+proc sql;
+   create table table1_provider_payment_breakdown_optimized as
+   select 
+      p.abn,
+      p.legal_name as "Legal Name",
+      p.registration_status as "Registration Status",
+      /* Inline registered quarter calculation for efficiency */
+      (select min(quarter) 
+       from your_source_table t2 
+       where t2.abn = p.abn 
+       and t2.registration_status in ('Active', 'Registered', 'Current')) as "Registered Quarter",
+      p.entity_type as "Entity Type", 
+      coalesce(s.service_type_registration_group_name, 'Unknown') as "Service Type (Registration Group Name)",
+      sum(case when p.quarter = 'Mar-22' then p.payment_amount else 0 end) as "Mar-22",
+      sum(case when p.quarter = 'Jun-22' then p.payment_amount else 0 end) as "Jun-22",
+      sum(case when p.quarter = 'Sep-22' then p.payment_amount else 0 end) as "Sep-22", 
+      sum(case when p.quarter = 'Dec-22' then p.payment_amount else 0 end) as "Dec-22",
+      sum(case when p.quarter = 'Mar-23' then p.payment_amount else 0 end) as "Mar-23",
+      sum(case when p.quarter = 'Jun-23' then p.payment_amount else 0 end) as "Jun-23"
+   from your_source_table p
+   left join support_item_service_type_lookup s on p.support_item_number = s.support_item_number
+   where p.payment_amount is not null
+   group by p.abn, p.legal_name, p.registration_status, calculated "Registered Quarter", 
+            p.entity_type, calculated "Service Type (Registration Group Name)"
+   order by p.abn, calculated "Service Type (Registration Group Name)";
+quit;
+
+/* ALTERNATIVE: Most efficient for very large datasets - Hash object approach */
+data table1_provider_payment_breakdown_hash;
+    /* Load lookup table into hash object for fastest lookups */
+    if _n_ = 1 then do;
+        declare hash h(dataset:'support_item_service_type_lookup');
+        h.definekey('support_item_number');
+        h.definedata('service_type_registration_group_name');
+        h.definedone();
+        call missing(service_type_temp);
+    end;
+    
+    /* Read main data and process */
+    set your_source_table;
+    where payment_amount is not null;
+    
+    /* Hash lookup - fastest method */
+    if h.find() = 0 then service_type = service_type_temp;
+    else service_type = 'Unknown';
+    
+    /* Your aggregation logic here using PROC SUMMARY or similar */
+run;
