@@ -1,0 +1,126 @@
+/* PROC SUMMARY METHOD - MOST EFFICIENT FOR BIG DATA */
+
+/* Step 1: Import Excel file containing support item mappings */
+proc import datafile="path/to/your/support_item_mapping.xlsx"
+    out=support_item_temp
+    dbms=xlsx
+    replace;
+    sheet="Sheet1";
+    getnames=yes;
+    datarow=2;
+run;
+
+/* Step 2: Create service type lookup table */
+data support_item_service_type_lookup;
+    set support_item_temp;
+    rename support_line_item = support_item_number;
+    length service_type_registration_group_name $50;
+    
+    /* Priority 1: Check ABC column for 'SIL' text first */
+    if index(upcase(ABC), 'SIL') > 0 then
+        service_type_registration_group_name = 'SIL';
+    
+    /* Priority 2: Use support item patterns */
+    else if index(support_line_item, '01_') = 1 and index(support_line_item, '_0115_1_1') > 0 then
+        service_type_registration_group_name = 'SIL';
+    else if index(support_line_item, '01_') = 1 and index(support_line_item, '_0107_1_1') > 0 then
+        service_type_registration_group_name = 'Personal Care';
+    else if index(support_line_item, '01_') = 1 and index(support_line_item, '_0104_1_1') > 0 then
+        service_type_registration_group_name = 'Community Participation';
+    else if index(support_line_item, '15_') = 1 and index(support_line_item, '_0125_6_1') > 0 then
+        service_type_registration_group_name = 'Therapeutic Support - OT';
+    else if index(support_line_item, '15_') = 1 and index(support_line_item, '_0128_6_1') > 0 then
+        service_type_registration_group_name = 'Therapeutic Support - Other';
+    else if index(support_line_item, '03_') = 1 and index(support_line_item, '_0116_2_1') > 0 then
+        service_type_registration_group_name = 'Capital';
+    else service_type_registration_group_name = 'Other';
+run;
+
+/* Step 3: Get registered quarter using PROC SUMMARY - fastest aggregation method */
+proc summary data=your_source_table nway;
+    class abn;
+    var quarter;
+    output out=abn_registered_quarter(drop=_type_ _freq_) min=registered_quarter;
+    where registration_status in ('Active', 'Registered', 'Current');
+run;
+
+/* Step 4: Join all tables and prepare for aggregation */
+proc sql;
+    create table payment_data_prepared as
+    select 
+        p.abn,
+        p.legal_name,
+        p.registration_status,
+        r.registered_quarter,
+        p.entity_type,
+        coalesce(s.service_type_registration_group_name, 'Unknown') as service_type,
+        p.quarter,
+        p.payment_amount
+    from your_source_table p
+    left join abn_registered_quarter r on p.abn = r.abn
+    left join support_item_service_type_lookup s on p.support_item_number = s.support_item_number
+    where p.payment_amount is not null;
+quit;
+
+/* Step 5: Use PROC SUMMARY for high-performance aggregation by all dimensions */
+proc summary data=payment_data_prepared nway;
+    class abn legal_name registration_status registered_quarter entity_type service_type quarter;
+    var payment_amount;
+    output out=payment_aggregated(drop=_type_ _freq_) sum=total_payment;
+run;
+
+/* Step 6: Use PROC TRANSPOSE to pivot quarters into columns */
+proc transpose data=payment_aggregated 
+               out=payment_transposed(drop=_name_) 
+               prefix=Q_;
+    by abn legal_name registration_status registered_quarter entity_type service_type;
+    id quarter;
+    var total_payment;
+run;
+
+/* Step 7: Final cleanup and formatting */
+data table1_provider_payment_breakdown;
+    set payment_transposed;
+    
+    /* Create final quarter columns with proper names and handle missing values */
+    length 
+        "Legal Name" $100
+        "Registration Status" $50
+        "Registered Quarter" $20
+        "Entity Type" $50
+        "Service Type (Registration Group Name)" $50;
+    
+    /* Assign formatted column names */
+    "Legal Name" = legal_name;
+    "Registration Status" = registration_status;
+    "Registered Quarter" = registered_quarter;
+    "Entity Type" = entity_type;
+    "Service Type (Registration Group Name)" = service_type;
+    
+    /* Create quarter columns with zero defaults for missing values */
+    "Mar-22" = coalesce(Q_Mar_22, 0);
+    "Jun-22" = coalesce(Q_Jun_22, 0);
+    "Sep-22" = coalesce(Q_Sep_22, 0);
+    "Dec-22" = coalesce(Q_Dec_22, 0);
+    "Mar-23" = coalesce(Q_Mar_23, 0);
+    "Jun-23" = coalesce(Q_Jun_23, 0);
+    
+    /* Keep only required columns */
+    keep abn "Legal Name" "Registration Status" "Registered Quarter" "Entity Type" 
+         "Service Type (Registration Group Name)" "Mar-22" "Jun-22" "Sep-22" "Dec-22" "Mar-23" "Jun-23";
+run;
+
+/* Step 8: Sort final output */
+proc sort data=table1_provider_payment_breakdown;
+    by abn "Service Type (Registration Group Name)";
+run;
+
+/* Optional: Display summary statistics */
+proc print data=table1_provider_payment_breakdown(obs=10) noobs;
+    title "Provider Payment Breakdown - First 10 Records";
+run;
+
+proc freq data=table1_provider_payment_breakdown;
+    tables "Service Type (Registration Group Name)" / nocum;
+    title "Distribution of Service Types";
+run;
