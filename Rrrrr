@@ -1,0 +1,114 @@
+Based on your description, you want to find the earliest registration date for each provider (PMTRQSTPRVDRABN). Here's the solution:
+
+## Method 1: Using Window Function (Most Efficient)
+```sql
+PROC SQL;
+    CREATE TABLE TEMP_WITH_EARLIEST AS
+    SELECT *,
+           MIN(CASE WHEN UPCASE(DELIVERY_ABN_STS) = 'REGISTERED' 
+                    THEN REG_QUARTER2 
+                    ELSE . END) AS EARLIEST_REGISTRATION_DATE FORMAT=DATE9.
+    FROM TEMP99
+    GROUP BY PMTRQSTPRVDRABN;
+QUIT;
+```
+
+## Method 2: Two-Step Approach with Join
+```sql
+/* Step 1: Calculate earliest registration date by provider */
+PROC SQL;
+    CREATE TABLE EARLIEST_REG_DATES AS
+    SELECT PMTRQSTPRVDRABN,
+           MIN(REG_QUARTER2) AS EARLIEST_REGISTRATION_DATE FORMAT=DATE9.
+    FROM TEMP99
+    WHERE UPCASE(DELIVERY_ABN_STS) = 'REGISTERED'
+      AND REG_QUARTER2 IS NOT MISSING
+    GROUP BY PMTRQSTPRVDRABN;
+QUIT;
+
+/* Step 2: Join back to original data */
+PROC SQL;
+    CREATE TABLE FINAL_DATA AS
+    SELECT A.*,
+           COALESCE(B.EARLIEST_REGISTRATION_DATE, .) AS EARLIEST_REGISTRATION_DATE FORMAT=DATE9.
+    FROM TEMP99 AS A
+         LEFT JOIN EARLIEST_REG_DATES AS B
+         ON A.PMTRQSTPRVDRABN = B.PMTRQSTPRVDRABN
+    ORDER BY A.PMTRQSTPRVDRABN, A.QTR;
+QUIT;
+```
+
+## Method 3: Using Subquery in SELECT
+```sql
+PROC SQL;
+    CREATE TABLE FINAL_DATA AS
+    SELECT *,
+           (SELECT MIN(REG_QUARTER2)
+            FROM TEMP99 AS B
+            WHERE B.PMTRQSTPRVDRABN = A.PMTRQSTPRVDRABN
+              AND UPCASE(B.DELIVERY_ABN_STS) = 'REGISTERED'
+              AND B.REG_QUARTER2 IS NOT MISSING) AS EARLIEST_REGISTRATION_DATE FORMAT=DATE9.
+    FROM TEMP99 AS A
+    ORDER BY A.PMTRQSTPRVDRABN, A.QTR;
+QUIT;
+```
+
+## Method 4: More Detailed with Validation
+```sql
+PROC SQL;
+    CREATE TABLE FINAL_DATA AS
+    SELECT *,
+           CASE 
+             WHEN (SELECT COUNT(*) 
+                   FROM TEMP99 AS B 
+                   WHERE B.PMTRQSTPRVDRABN = A.PMTRQSTPRVDRABN 
+                     AND UPCASE(B.DELIVERY_ABN_STS) = 'REGISTERED') > 0 THEN
+                 (SELECT MIN(REG_QUARTER2)
+                  FROM TEMP99 AS B
+                  WHERE B.PMTRQSTPRVDRABN = A.PMTRQSTPRVDRABN
+                    AND UPCASE(B.DELIVERY_ABN_STS) = 'REGISTERED'
+                    AND B.REG_QUARTER2 IS NOT MISSING)
+             ELSE .
+           END AS EARLIEST_REGISTRATION_DATE FORMAT=DATE9.
+    FROM TEMP99 AS A
+    ORDER BY A.PMTRQSTPRVDRABN, A.QTR;
+QUIT;
+```
+
+## Method 5: Adding Additional Information
+```sql
+PROC SQL;
+    CREATE TABLE FINAL_DATA AS
+    SELECT A.*,
+           B.EARLIEST_REGISTRATION_DATE,
+           B.TOTAL_REG_PERIODS,
+           B.EVER_REGISTERED
+    FROM TEMP99 AS A
+         LEFT JOIN (
+             SELECT PMTRQSTPRVDRABN,
+                    MIN(REG_QUARTER2) AS EARLIEST_REGISTRATION_DATE FORMAT=DATE9.,
+                    COUNT(*) AS TOTAL_REG_PERIODS,
+                    'YES' AS EVER_REGISTERED
+             FROM TEMP99
+             WHERE UPCASE(DELIVERY_ABN_STS) = 'REGISTERED'
+               AND REG_QUARTER2 IS NOT MISSING
+             GROUP BY PMTRQSTPRVDRABN
+         ) AS B
+         ON A.PMTRQSTPRVDRABN = B.PMTRQSTPRVDRABN
+    ORDER BY A.PMTRQSTPRVDRABN, A.QTR;
+QUIT;
+```
+
+**I recommend Method 1** as it's the most efficient and clean. It will:
+
+1. Look at each PMTRQSTPRVDRABN
+2. Find all records where DELIVERY_ABN_STS = 'Registered'
+3. Take the minimum (earliest) REG_QUARTER2 value from those records
+4. Apply that same earliest date to ALL records for that provider
+
+For example, looking at your data:
+- Provider 48163960192: All records will get 30SEP2024 as the earliest registration date
+- Provider 48164106311: All records will get missing (.) since this provider was never registered
+- Provider 48164192214: All records will get missing (.) since this provider was never registered
+
+This way, every record for the same provider will have the same EARLIEST_REGISTRATION_DATE value, making it easy to identify when each provider first became registered.
