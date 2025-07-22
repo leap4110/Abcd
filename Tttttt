@@ -1,0 +1,112 @@
+Ah, I understand! You want the actual DELIVERY_ABN_STS value (Registered/Unregistered) that corresponds to the maximum quarter for each provider. Here's the corrected code:
+
+## Method 1: Using Subquery to Get Status at Max Quarter
+```sql
+PROC SQL;
+    CREATE TABLE FINAL_DATA AS
+    SELECT *,
+           /* Earliest registration date */
+           MIN(CASE WHEN UPCASE(DELIVERY_ABN_STS) = 'REGISTERED' 
+                    THEN REG_QUARTER2 
+                    ELSE . END) AS EARLIEST_REGISTRATION_DATE FORMAT=DATE9.,
+           
+           /* Delivery status at the latest quarter */
+           (SELECT DELIVERY_ABN_STS 
+            FROM TEMP99 AS B 
+            WHERE B.PMTRQSTPRVDRABN = A.PMTRQSTPRVDRABN 
+              AND B.QTR = (SELECT MAX(C.QTR) 
+                          FROM TEMP99 AS C 
+                          WHERE C.PMTRQSTPRVDRABN = A.PMTRQSTPRVDRABN)
+            LIMIT 1) AS LATEST_DELIVERY_STATUS
+    FROM TEMP99 AS A
+    GROUP BY PMTRQSTPRVDRABN
+    ORDER BY A.PMTRQSTPRVDRABN, A.QTR;
+QUIT;
+```
+
+## Method 2: Two-Step Approach (Cleaner)
+```sql
+/* Step 1: Find the latest quarter and its delivery status for each provider */
+PROC SQL;
+    CREATE TABLE LATEST_STATUS_BY_PROVIDER AS
+    SELECT A.PMTRQSTPRVDRABN,
+           A.QTR AS LATEST_QTR,
+           A.DELIVERY_ABN_STS AS LATEST_DELIVERY_STATUS,
+           MIN(CASE WHEN UPCASE(B.DELIVERY_ABN_STS) = 'REGISTERED' 
+                    THEN B.REG_QUARTER2 
+                    ELSE . END) AS EARLIEST_REGISTRATION_DATE FORMAT=DATE9.
+    FROM TEMP99 AS A
+         INNER JOIN (SELECT PMTRQSTPRVDRABN, MAX(QTR) AS MAX_QTR
+                     FROM TEMP99 
+                     GROUP BY PMTRQSTPRVDRABN) AS MAX_QTRS
+         ON A.PMTRQSTPRVDRABN = MAX_QTRS.PMTRQSTPRVDRABN 
+            AND A.QTR = MAX_QTRS.MAX_QTR
+         LEFT JOIN TEMP99 AS B ON A.PMTRQSTPRVDRABN = B.PMTRQSTPRVDRABN
+    GROUP BY A.PMTRQSTPRVDRABN, A.QTR, A.DELIVERY_ABN_STS;
+QUIT;
+
+/* Step 2: Join back to original data */
+PROC SQL;
+    CREATE TABLE FINAL_DATA AS
+    SELECT A.*,
+           B.EARLIEST_REGISTRATION_DATE,
+           B.LATEST_DELIVERY_STATUS
+    FROM TEMP99 AS A
+         LEFT JOIN LATEST_STATUS_BY_PROVIDER AS B
+         ON A.PMTRQSTPRVDRABN = B.PMTRQSTPRVDRABN
+    ORDER BY A.PMTRQSTPRVDRABN, A.QTR;
+QUIT;
+```
+
+## Method 3: Using Window Functions (Most Efficient)
+```sql
+PROC SQL;
+    CREATE TABLE FINAL_DATA AS
+    SELECT *,
+           /* Earliest registration date */
+           MIN(CASE WHEN UPCASE(DELIVERY_ABN_STS) = 'REGISTERED' 
+                    THEN REG_QUARTER2 
+                    ELSE . END) AS EARLIEST_REGISTRATION_DATE FORMAT=DATE9.,
+           
+           /* Get delivery status where QTR equals the max QTR for that provider */
+           MAX(CASE WHEN QTR = (SELECT MAX(QTR) FROM TEMP99 AS B WHERE B.PMTRQSTPRVDRABN = A.PMTRQSTPRVDRABN)
+                   THEN DELIVERY_ABN_STS 
+                   ELSE '' END) AS LATEST_DELIVERY_STATUS
+    FROM TEMP99 AS A
+    GROUP BY PMTRQSTPRVDRABN
+    ORDER BY A.PMTRQSTPRVDRABN, A.QTR;
+QUIT;
+```
+
+## Method 4: Handling Multiple Records in Latest Quarter
+```sql
+PROC SQL;
+    CREATE TABLE FINAL_DATA AS
+    SELECT A.*,
+           B.EARLIEST_REGISTRATION_DATE,
+           B.LATEST_DELIVERY_STATUS
+    FROM TEMP99 AS A
+         LEFT JOIN (
+             SELECT PMTRQSTPRVDRABN,
+                    MIN(CASE WHEN UPCASE(DELIVERY_ABN_STS) = 'REGISTERED' 
+                             THEN REG_QUARTER2 
+                             ELSE . END) AS EARLIEST_REGISTRATION_DATE FORMAT=DATE9.,
+                    MAX(CASE WHEN QTR = MAX_QTR THEN DELIVERY_ABN_STS END) AS LATEST_DELIVERY_STATUS
+             FROM (SELECT *, 
+                          MAX(QTR) OVER (PARTITION BY PMTRQSTPRVDRABN) AS MAX_QTR
+                   FROM TEMP99) AS INNER_QUERY
+             GROUP BY PMTRQSTPRVDRABN
+         ) AS B
+         ON A.PMTRQSTPRVDRABN = B.PMTRQSTPRVDRABN
+    ORDER BY A.PMTRQSTPRVDRABN, A.QTR;
+QUIT;
+```
+
+**I recommend Method 2** as it's the most readable and handles the logic clearly. 
+
+Based on your data, this will give you:
+- Provider 48163960192: LATEST_DELIVERY_STATUS = "Registered" (because their latest quarter 2425_Q2 shows "Registered")
+- Provider 48164106311: LATEST_DELIVERY_STATUS = "Unregistered" (because their latest quarter shows "Unregistered")
+- Provider 48164192214: LATEST_DELIVERY_STATUS = "Unregistered" (because their latest quarter shows "Unregistered")
+
+The key difference is that now you're getting the actual text value ("Registered" or "Unregistered") that exists in the DELIVERY_ABN_STS field for the record with the maximum QTR value for each provider.
