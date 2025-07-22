@@ -1,0 +1,118 @@
+You're right! Here's how to create a lookup table using DATALINES and then join it:
+
+## Create Lookup Table with DATALINES
+```sas
+data quarter_lookup;
+   input fiscal_quarter $ date_value :date9.;
+   format date_value date9.;
+   datalines;
+2324_q1 30SEP2023
+2324_q2 31DEC2023
+2324_q3 30MAR2024
+2324_q4 30JUN2024
+2223_q1 30SEP2022
+2223_q2 31DEC2022
+2223_q3 30MAR2023
+2223_q4 30JUN2023
+2425_q1 30SEP2024
+2425_q2 31DEC2024
+2425_q3 30MAR2025
+2425_q4 30JUN2025
+;
+run;
+```
+
+## Join with Your Data Using PROC SQL
+```sql
+proc sql;
+   create table converted_data as
+   select a.*, 
+          b.date_value as converted_date
+   from your_table_name as a
+   left join quarter_lookup as b
+   on upcase(a.char_date_field) = upcase(b.fiscal_quarter);
+quit;
+```
+
+## Alternative: More Complete Lookup Table
+```sas
+data quarter_lookup;
+   length fiscal_quarter $10;
+   input fiscal_quarter $ date_value :date9.;
+   format date_value date9.;
+   datalines;
+2021_q1 30SEP2020
+2021_q2 31DEC2020
+2021_q3 30MAR2021
+2021_q4 30JUN2021
+2122_q1 30SEP2021
+2122_q2 31DEC2021
+2122_q3 30MAR2022
+2122_q4 30JUN2022
+2223_q1 30SEP2022
+2223_q2 31DEC2022
+2223_q3 30MAR2023
+2223_q4 30JUN2023
+2324_q1 30SEP2023
+2324_q2 31DEC2023
+2324_q3 30MAR2024
+2324_q4 30JUN2024
+2425_q1 30SEP2024
+2425_q2 31DEC2024
+2425_q3 30MAR2025
+2425_q4 30JUN2025
+;
+run;
+```
+
+## Using DATA Step Merge Instead
+```sas
+/* Sort both datasets first */
+proc sort data=your_table_name;
+   by char_date_field;
+run;
+
+proc sort data=quarter_lookup;
+   by fiscal_quarter;
+run;
+
+/* Merge the datasets */
+data final_data;
+   merge your_table_name (in=a)
+         quarter_lookup (in=b rename=(fiscal_quarter=char_date_field));
+   by char_date_field;
+   if a;
+   drop fiscal_quarter;
+run;
+```
+
+## With Case-Insensitive Matching
+```sas
+data quarter_lookup;
+   length fiscal_quarter fiscal_quarter_upper $10;
+   input fiscal_quarter $ date_value :date9.;
+   fiscal_quarter_upper = upcase(fiscal_quarter);
+   format date_value date9.;
+   datalines;
+2324_q1 30SEP2023
+2324_q2 31DEC2023
+2324_q3 30MAR2024
+2324_q4 30JUN2024
+2324_Q1 30SEP2023
+2324_Q2 31DEC2023
+2324_Q3 30MAR2024
+2324_Q4 30JUN2024
+;
+run;
+
+proc sql;
+   create table converted_data as
+   select a.*, 
+          b.date_value as converted_date
+   from your_table_name as a
+   left join quarter_lookup as b
+   on upcase(a.char_date_field) = b.fiscal_quarter_upper;
+quit;
+```
+
+This approach is much cleaner and easier to maintain than complex CASE WHEN logic!
