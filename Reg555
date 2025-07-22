@@ -1,0 +1,134 @@
+Ah, I understand now! You want to apply MIN/MAX logic at the provider level (PMTRQSTPRVDRABN) based on registration status. Here's the solution:
+
+## Method 1: Using Subqueries in CASE WHEN
+```sql
+PROC SQL;
+    CREATE TABLE TEMP99 AS
+    SELECT A.*
+         , B.DATE_QUARTER AS REG_QUARTER2
+         , C.DATE_QUARTER AS QTR2
+         , CASE 
+             /* If provider ever switched from registered to unregistered, get earliest date */
+             WHEN (SELECT COUNT(DISTINCT DELIVERY_ABN_STS) 
+                   FROM CONSOLIDATE 
+                   WHERE PMIRQSTPRVDRABN = A.PMIRQSTPRVDRABN) > 1 THEN
+                 (SELECT MIN(C2.DATE_QUARTER)
+                  FROM CONSOLIDATE AS A2
+                  LEFT JOIN QUARTER_LOOKUP AS C2 ON A2.QTR = C2.FY_QUARTER
+                  WHERE A2.PMIRQSTPRVDRABN = A.PMIRQSTPRVDRABN)
+                  
+             /* If always registered, get minimum date quarter */
+             WHEN UPCASE(DELIVERY_ABN_STS) = 'REGISTERED' THEN 
+                 (SELECT MIN(C2.DATE_QUARTER)
+                  FROM CONSOLIDATE AS A2
+                  LEFT JOIN QUARTER_LOOKUP AS C2 ON A2.QTR = C2.FY_QUARTER
+                  WHERE A2.PMIRQSTPRVDRABN = A.PMIRQSTPRVDRABN
+                    AND UPCASE(A2.DELIVERY_ABN_STS) = 'REGISTERED')
+                    
+             /* If always unregistered, get maximum date quarter */
+             WHEN UPCASE(DELIVERY_ABN_STS) = 'UNREGISTERED' THEN 
+                 (SELECT MAX(C2.DATE_QUARTER)
+                  FROM CONSOLIDATE AS A2
+                  LEFT JOIN QUARTER_LOOKUP AS C2 ON A2.QTR = C2.FY_QUARTER
+                  WHERE A2.PMIRQSTPRVDRABN = A.PMIRQSTPRVDRABN
+                    AND UPCASE(A2.DELIVERY_ABN_STS) = 'UNREGISTERED')
+             ELSE C.DATE_QUARTER
+           END AS REG_QUARTER3 FORMAT=DATE9.
+    FROM CONSOLIDATE AS A
+         LEFT JOIN QUARTER_LOOKUP AS B ON A.REG_QTR = B.FY_QUARTER
+         LEFT JOIN QUARTER_LOOKUP AS C ON A.QTR = C.FY_QUARTER
+    ORDER BY A.PMIRQSTPRVDRABN, A.DELIVERY_ABN_STS DESC, A.Service_Type;
+QUIT;
+```
+
+## Method 2: Two-Step Approach (More Efficient)
+```sql
+/* Step 1: Calculate the logic by provider */
+PROC SQL;
+    CREATE TABLE PROVIDER_DATES AS
+    SELECT PMIRQSTPRVDRABN,
+           COUNT(DISTINCT DELIVERY_ABN_STS) AS STATUS_COUNT,
+           MIN(CASE WHEN UPCASE(DELIVERY_ABN_STS) = 'REGISTERED' THEN C.DATE_QUARTER END) AS MIN_REG_DATE,
+           MAX(CASE WHEN UPCASE(DELIVERY_ABN_STS) = 'UNREGISTERED' THEN C.DATE_QUARTER END) AS MAX_UNREG_DATE,
+           MIN(C.DATE_QUARTER) AS EARLIEST_DATE,
+           CASE 
+             WHEN COUNT(DISTINCT DELIVERY_ABN_STS) > 1 THEN MIN(C.DATE_QUARTER)
+             WHEN MAX(UPCASE(DELIVERY_ABN_STS)) = 'REGISTERED' THEN MIN(CASE WHEN UPCASE(DELIVERY_ABN_STS) = 'REGISTERED' THEN C.DATE_QUARTER END)
+             WHEN MAX(UPCASE(DELIVERY_ABN_STS)) = 'UNREGISTERED' THEN MAX(CASE WHEN UPCASE(DELIVERY_ABN_STS) = 'UNREGISTERED' THEN C.DATE_QUARTER END)
+             ELSE MIN(C.DATE_QUARTER)
+           END AS FINAL_DATE FORMAT=DATE9.
+    FROM CONSOLIDATE AS A
+         LEFT JOIN QUARTER_LOOKUP AS C ON A.QTR = C.FY_QUARTER
+    GROUP BY PMIRQSTPRVDRABN;
+QUIT;
+
+/* Step 2: Join back to get the result */
+PROC SQL;
+    CREATE TABLE TEMP99 AS
+    SELECT A.*,
+           B.DATE_QUARTER AS REG_QUARTER2,
+           C.DATE_QUARTER AS QTR2,
+           D.FINAL_DATE AS REG_QUARTER3
+    FROM CONSOLIDATE AS A
+         LEFT JOIN QUARTER_LOOKUP AS B ON A.REG_QTR = B.FY_QUARTER
+         LEFT JOIN QUARTER_LOOKUP AS C ON A.QTR = C.FY_QUARTER
+         LEFT JOIN PROVIDER_DATES AS D ON A.PMIRQSTPRVDRABN = D.PMIRQSTPRVDRABN
+    ORDER BY A.PMIRQSTPRVDRABN, A.DELIVERY_ABN_STS DESC, A.Service_Type;
+QUIT;
+```
+
+## Method 3: More Readable Three-Step Approach
+```sql
+/* Step 1: Identify providers who switched status */
+PROC SQL;
+    CREATE TABLE PROVIDER_STATUS AS
+    SELECT PMIRQSTPRVDRABN,
+           COUNT(DISTINCT DELIVERY_ABN_STS) AS STATUS_COUNT,
+           CASE WHEN COUNT(DISTINCT DELIVERY_ABN_STS) > 1 THEN 'SWITCHED'
+                WHEN MAX(UPCASE(DELIVERY_ABN_STS)) = 'REGISTERED' THEN 'ALWAYS_REG'
+                WHEN MAX(UPCASE(DELIVERY_ABN_STS)) = 'UNREGISTERED' THEN 'ALWAYS_UNREG'
+                ELSE 'OTHER'
+           END AS PROVIDER_TYPE
+    FROM CONSOLIDATE
+    GROUP BY PMIRQSTPRVDRABN;
+QUIT;
+
+/* Step 2: Calculate dates based on provider type */
+PROC SQL;
+    CREATE TABLE PROVIDER_FINAL_DATES AS
+    SELECT A.PMIRQSTPRVDRABN,
+           B.PROVIDER_TYPE,
+           CASE 
+             WHEN B.PROVIDER_TYPE = 'SWITCHED' THEN MIN(C.DATE_QUARTER)
+             WHEN B.PROVIDER_TYPE = 'ALWAYS_REG' THEN MIN(CASE WHEN UPCASE(A.DELIVERY_ABN_STS) = 'REGISTERED' THEN C.DATE_QUARTER END)
+             WHEN B.PROVIDER_TYPE = 'ALWAYS_UNREG' THEN MAX(CASE WHEN UPCASE(A.DELIVERY_ABN_STS) = 'UNREGISTERED' THEN C.DATE_QUARTER END)
+             ELSE MIN(C.DATE_QUARTER)
+           END AS FINAL_DATE FORMAT=DATE9.
+    FROM CONSOLIDATE AS A
+         INNER JOIN PROVIDER_STATUS AS B ON A.PMIRQSTPRVDRABN = B.PMIRQSTPRVDRABN
+         LEFT JOIN QUARTER_LOOKUP AS C ON A.QTR = C.FY_QUARTER
+    GROUP BY A.PMIRQSTPRVDRABN, B.PROVIDER_TYPE;
+QUIT;
+
+/* Step 3: Final join */
+PROC SQL;
+    CREATE TABLE TEMP99 AS
+    SELECT A.*,
+           B.DATE_QUARTER AS REG_QUARTER2,
+           C.DATE_QUARTER AS QTR2,
+           D.FINAL_DATE AS REG_QUARTER3
+    FROM CONSOLIDATE AS A
+         LEFT JOIN QUARTER_LOOKUP AS B ON A.REG_QTR = B.FY_QUARTER
+         LEFT JOIN QUARTER_LOOKUP AS C ON A.QTR = C.FY_QUARTER
+         LEFT JOIN PROVIDER_FINAL_DATES AS D ON A.PMIRQSTPRVDRABN = D.PMIRQSTPRVDRABN
+    ORDER BY A.PMIRQSTPRVDRABN, A.DELIVERY_ABN_STS DESC, A.Service_Type;
+QUIT;
+```
+
+**Method 2 is probably the most efficient** for your needs. It handles all three scenarios:
+
+1. **Switched status** → Returns earliest date quarter
+2. **Always registered** → Returns minimum date quarter for registered records
+3. **Always unregistered** → Returns maximum date quarter for unregistered records
+
+The key insight is that you need to GROUP BY PMIRQSTPRVDRABN to apply the MIN/MAX logic at the provider level, not the individual record level.
