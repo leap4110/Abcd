@@ -1,0 +1,146 @@
+Yes, there are several ways to import multiple Excel sheets at once instead of using multiple PROC IMPORT statements:
+
+## Method 1: Macro with Loop
+```sas
+%macro import_all_sheets;
+    %let sheets = SII OT Personal_Care Community_Part Other_Therapy;
+    %let i = 1;
+    
+    %do %while(%scan(&sheets, &i) ne );
+        %let sheet = %scan(&sheets, &i);
+        
+        proc import 
+            datafile="\\prnixnas001\SASStorage\NDIMarketData\Projects\Small Projects\Markets options paper on provider viability\Data request - Dom v2.xlsx"
+            out=SUPPORT_ITEM_TEMP&i
+            dbms=xlsx
+            replace;
+            sheet="&sheet";
+            getnames=yes;
+        run;
+        
+        %let i = %eval(&i + 1);
+    %end;
+%mend;
+
+%import_all_sheets;
+```
+
+## Method 2: Using LIBNAME with Excel Engine
+```sas
+/* Create a libname pointing to the Excel file */
+libname excel "\\prnixnas001\SASStorage\NDIMarketData\Projects\Small Projects\Markets options paper on provider viability\Data request - Dom v2.xlsx";
+
+/* Copy all sheets to work library */
+proc copy in=excel out=work;
+run;
+
+/* Or copy specific sheets */
+data SUPPORT_ITEM_TEMP1; set excel.SII; run;
+data SUPPORT_ITEM_TEMP2; set excel.OT; run;
+data SUPPORT_ITEM_TEMP3; set excel.'Personal Care'n; run;
+data SUPPORT_ITEM_TEMP4; set excel.'Community Part.'n; run;
+data SUPPORT_ITEM_TEMP5; set excel.'Other Therapy'n; run;
+
+/* Clear the libname */
+libname excel clear;
+```
+
+## Method 3: Advanced Macro with Automatic Sheet Detection
+```sas
+%macro import_excel_file(file=, prefix=);
+    /* Create libname to read sheet names */
+    libname temp "&file";
+    
+    /* Get list of sheet names */
+    proc sql noprint;
+        select distinct memname into :sheet_list separated by '|'
+        from dictionary.tables
+        where libname = 'TEMP';
+    quit;
+    
+    libname temp clear;
+    
+    /* Import each sheet */
+    %let i = 1;
+    %do %while(%scan(&sheet_list, &i, |) ne );
+        %let sheet = %scan(&sheet_list, &i, |);
+        
+        proc import 
+            datafile="&file"
+            out=&prefix&i
+            dbms=xlsx
+            replace;
+            sheet="&sheet";
+            getnames=yes;
+        run;
+        
+        %put NOTE: Imported sheet &sheet as dataset &prefix&i;
+        %let i = %eval(&i + 1);
+    %end;
+%mend;
+
+/* Call the macro */
+%import_excel_file(
+    file=\\prnixnas001\SASStorage\NDIMarketData\Projects\Small Projects\Markets options paper on provider viability\Data request - Dom v2.xlsx,
+    prefix=SUPPORT_ITEM_TEMP
+);
+```
+
+## Method 4: Using PROC DATASETS to Get Sheet Names First
+```sas
+/* Step 1: Get all sheet names */
+libname myexcel "\\prnixnas001\SASStorage\NDIMarketData\Projects\Small Projects\Markets options paper on provider viability\Data request - Dom v2.xlsx";
+
+proc datasets library=myexcel nolist;
+    contents data=_all_ out=sheet_info(keep=memname) noprint;
+run;
+
+/* Step 2: Create macro variables from sheet names */
+proc sql noprint;
+    select distinct memname into :sheet1-:sheet999
+    from sheet_info;
+    select count(distinct memname) into :sheet_count
+    from sheet_info;
+quit;
+
+/* Step 3: Import all sheets using macro loop */
+%macro import_sheets;
+    %do i = 1 %to &sheet_count;
+        data SUPPORT_ITEM_TEMP&i;
+            set myexcel.&&sheet&i;
+        run;
+    %end;
+%mend;
+
+%import_sheets;
+
+libname myexcel clear;
+```
+
+## Method 5: Simple LIBNAME Approach (Recommended)
+```sas
+/* This is often the simplest approach */
+libname xl "\\prnixnas001\SASStorage\NDIMarketData\Projects\Small Projects\Markets options paper on provider viability\Data request - Dom v2.xlsx";
+
+/* List all available sheets */
+proc datasets library=xl;
+run;
+
+/* Copy the ones you want */
+data SUPPORT_ITEM_TEMP1; set xl.SII; run;
+data SUPPORT_ITEM_TEMP2; set xl.OT; run;
+data SUPPORT_ITEM_TEMP3; set xl.'Personal Care'n; run;
+data SUPPORT_ITEM_TEMP4; set xl.'Community Part'n; run;
+data SUPPORT_ITEM_TEMP5; set xl.'Other Therapy'n; run;
+
+libname xl clear;
+```
+
+**Method 5 (LIBNAME) is usually the most efficient** because:
+- It's simpler and more readable
+- No need for complex macros
+- SAS handles the Excel connection more efficiently
+- You can easily see what sheets are available
+- Better performance for large files
+
+Choose the method that best fits your needs!
