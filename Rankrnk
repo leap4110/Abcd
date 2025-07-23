@@ -1,0 +1,138 @@
+Ah, I understand now! You want to rank by PMTRQSTPRVDRABN based on the grand total of all their payments across all service types and delivery statuses. Here's the corrected code:
+
+## Method: Rank by Provider Grand Total Payment
+```sql
+PROC SQL;
+    CREATE TABLE RANKED_TRANSPOSED_DATA AS
+    SELECT A.*,
+           B.RANK
+    FROM (
+        SELECT PMTRQSTPRVDRABN,
+               LEGALNM,
+               DELIVERY_ABN_STS,
+               Service_Type,
+               EARLIEST_REGISTRATION_DATE,
+               LATEST_DELIVERY_STATUS,
+               
+               /* Payment columns by date */
+               SUM(CASE WHEN REG_QUARTER2 = '30SEP2023'd THEN PAYMENT ELSE 0 END) AS PAYMENT_30SEP2023,
+               SUM(CASE WHEN REG_QUARTER2 = '31DEC2023'd THEN PAYMENT ELSE 0 END) AS PAYMENT_31DEC2023,
+               SUM(CASE WHEN REG_QUARTER2 = '30MAR2024'd THEN PAYMENT ELSE 0 END) AS PAYMENT_30MAR2024,
+               SUM(CASE WHEN REG_QUARTER2 = '30JUN2024'd THEN PAYMENT ELSE 0 END) AS PAYMENT_30JUN2024,
+               SUM(CASE WHEN REG_QUARTER2 = '30SEP2024'd THEN PAYMENT ELSE 0 END) AS PAYMENT_30SEP2024,
+               SUM(CASE WHEN REG_QUARTER2 = '31DEC2024'd THEN PAYMENT ELSE 0 END) AS PAYMENT_31DEC2024,
+               SUM(CASE WHEN REG_QUARTER2 = '30MAR2025'd THEN PAYMENT ELSE 0 END) AS PAYMENT_30MAR2025,
+               SUM(CASE WHEN REG_QUARTER2 = '30JUN2025'd THEN PAYMENT ELSE 0 END) AS PAYMENT_30JUN2025,
+               SUM(CASE WHEN REG_QUARTER2 = '31DEC9999'd THEN PAYMENT ELSE 0 END) AS PAYMENT_31DEC9999,
+               
+               /* Count columns by date */
+               SUM(CASE WHEN REG_QUARTER2 = '30SEP2023'd THEN COUNT ELSE 0 END) AS COUNT_30SEP2023,
+               SUM(CASE WHEN REG_QUARTER2 = '31DEC2023'd THEN COUNT ELSE 0 END) AS COUNT_31DEC2023,
+               SUM(CASE WHEN REG_QUARTER2 = '30MAR2024'd THEN COUNT ELSE 0 END) AS COUNT_30MAR2024,
+               SUM(CASE WHEN REG_QUARTER2 = '30JUN2024'd THEN COUNT ELSE 0 END) AS COUNT_30JUN2024,
+               SUM(CASE WHEN REG_QUARTER2 = '30SEP2024'd THEN COUNT ELSE 0 END) AS COUNT_30SEP2024,
+               SUM(CASE WHEN REG_QUARTER2 = '31DEC2024'd THEN COUNT ELSE 0 END) AS COUNT_31DEC2024,
+               SUM(CASE WHEN REG_QUARTER2 = '30MAR2025'd THEN COUNT ELSE 0 END) AS COUNT_30MAR2025,
+               SUM(CASE WHEN REG_QUARTER2 = '30JUN2025'd THEN COUNT ELSE 0 END) AS COUNT_30JUN2025,
+               SUM(CASE WHEN REG_QUARTER2 = '31DEC9999'd THEN COUNT ELSE 0 END) AS COUNT_31DEC9999,
+               
+               /* Total columns */
+               SUM(PAYMENT) AS TOTAL_PAYMENT,
+               SUM(COUNT) AS TOTAL_COUNT
+               
+        FROM FINAL_DATA
+        GROUP BY PMTRQSTPRVDRABN, LEGALNM, DELIVERY_ABN_STS, Service_Type, 
+                 EARLIEST_REGISTRATION_DATE, LATEST_DELIVERY_STATUS
+    ) AS A
+    LEFT JOIN (
+        /* Calculate grand total by PMTRQSTPRVDRABN and rank */
+        SELECT PMTRQSTPRVDRABN,
+               RANK(GRAND_TOTAL_PAYMENT) AS RANK
+        FROM (
+            SELECT PMTRQSTPRVDRABN,
+                   SUM(PAYMENT) AS GRAND_TOTAL_PAYMENT
+            FROM FINAL_DATA
+            GROUP BY PMTRQSTPRVDRABN
+        )
+    ) AS B
+    ON A.PMTRQSTPRVDRABN = B.PMTRQSTPRVDRABN
+    ORDER BY B.RANK DESC, A.PMTRQSTPRVDRABN, A.Service_Type;
+QUIT;
+```
+
+## Sample Output:
+```
+Row 1:
+  PMTRQSTPRVDRABN: 48163960192
+  DELIVERY_ABN_STS: Registered
+  Service_Type: Community Par.
+  EARLIEST_REGISTRATION_DATE: 30SEP2024
+  LATEST_DELIVERY_STATUS: Registered
+  PAYMENT_30SEP2024: 100162.01
+  (all other date columns: 0)
+  TOTAL_PAYMENT: 100162.01
+  TOTAL_COUNT: 16
+  RANK: 1
+
+Row 2:
+  PMTRQSTPRVDRABN: 48163960192
+  DELIVERY_ABN_STS: Registered
+  Service_Type: OTHER
+  EARLIEST_REGISTRATION_DATE: 30SEP2024
+  LATEST_DELIVERY_STATUS: Registered
+  PAYMENT_30SEP2024: 170181.90
+  (all other date columns: 0)
+  TOTAL_PAYMENT: 170181.90
+  TOTAL_COUNT: 28
+  RANK: 1
+
+Row 3:
+  PMTRQSTPRVDRABN: 48163960192
+  DELIVERY_ABN_STS: Registered
+  Service_Type: Personal Care
+  EARLIEST_REGISTRATION_DATE: 30SEP2024
+  LATEST_DELIVERY_STATUS: Registered
+  PAYMENT_30SEP2024: 1722
+  (all other date columns: 0)
+  TOTAL_PAYMENT: 1722
+  TOTAL_COUNT: 8
+  RANK: 1
+
+Row 4:
+  PMTRQSTPRVDRABN: 48164106311
+  DELIVERY_ABN_STS: Unregistered
+  Service_Type: Community Par.
+  EARLIEST_REGISTRATION_DATE: (missing)
+  LATEST_DELIVERY_STATUS: Unregistered
+  PAYMENT_31DEC9999: 41275.62
+  (all other date columns: 0)
+  TOTAL_PAYMENT: 41275.62
+  TOTAL_COUNT: 8
+  RANK: 2
+
+Row 5:
+  PMTRQSTPRVDRABN: 48164106311
+  DELIVERY_ABN_STS: Unregistered
+  Service_Type: OTHER
+  EARLIEST_REGISTRATION_DATE: (missing)
+  LATEST_DELIVERY_STATUS: Unregistered
+  PAYMENT_31DEC9999: 25550.22
+  (all other date columns: 0)
+  TOTAL_PAYMENT: 25550.22
+  TOTAL_COUNT: 3
+  RANK: 2
+```
+
+## Key Points:
+
+1. **Provider 48163960192**: 
+   - Grand Total = $100,162.01 + $170,181.90 + $1,722 = $271,865.91
+   - **RANK: 1** (highest total)
+   - All rows for this provider get RANK = 1
+
+2. **Provider 48164106311**:
+   - Grand Total = $41,275.62 + $25,550.22 = $66,825.84  
+   - **RANK: 2** (second highest total)
+   - All rows for this provider get RANK = 2
+
+The ranking is now based on each provider's **grand total across all their service types and delivery statuses**, but each individual row still shows the breakdown by service type with the same rank applied to all rows for that provider.
