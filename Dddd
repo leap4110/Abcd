@@ -1,0 +1,22 @@
+Here's the revised text with improved grammar and sentence structure:
+
+**Issue 1: Provider Report (data model)**
+
+The market analytics team is currently revising the provider report data model, which will be used to dynamically calculate dashboard filters and chart options in our branch's preferred business intelligence tool, QlikSense.
+
+The provider report contains key performance indicators that are used to identify provider performance in the market over time or at specific points in time. Provider performance data enables the branch, group, and division (disability and carers stream) to quality-check payment and participant information against data provided by providers. The provider report also helps assess the impact on participants if a provider decides to exit the market and determines whether intervention is required to prevent disruption to key support services.
+
+The provider report data model requires access to NDIA administrative data. Without this data access, the division will be unable to assess the impact when providers exit the market or determine what interventions or remediation strategies could be implemented.
+
+**Impact on Stakeholders**
+Describe the impact on stakeholder groups both internal and external to the department.
+
+Key improvements made:
+- Simplified the opening sentence structure
+- Changed "consists of key performance indicators of providers which are used to identify" to "contains key performance indicators that are used to identify"
+- Clarified "over time or of a point in time" to "over time or at specific points in time"
+- Improved flow of the sentence about quality-checking
+- Restructured the sentence about market exit impact for better clarity
+- Fixed "grapple the impact" to "assess the impact"
+- Changed "utilised" to "implemented" for better word choice
+- Maintained the original meaning while improving readability
