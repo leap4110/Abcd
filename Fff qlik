@@ -1,0 +1,52 @@
+// Add this after your existing LOAD statement (around line 43)
+
+// First, load the data with previous quarter payment for growth calculation
+LOAD *,
+    AUTONUMBERHASH256(RANK,
+    PROVIDER_ABN,
+    LEGALNM,
+    DELIVERY_ABN_STS,
+    LEGALENTYTYPNM,
+    SERVICE_TYPE,
+    EARLIEST_REGISTRATION_DATE,
+    LATEST_REGISTRATION_DATE,
+    PAYMENT,
+    QTR2) AS KEYSIS,
+    
+    // Get previous quarter payment for the same provider
+    PREVIOUS(PAYMENT) AS Previous_Payment,
+    
+    // Calculate payment growth rate
+    IF(PREVIOUS(PAYMENT) > 0 AND NOT ISNULL(PREVIOUS(PAYMENT)),
+       ((PAYMENT - PREVIOUS(PAYMENT)) / PREVIOUS(PAYMENT)) * 100,
+       NULL()) AS Payment_Growth_Rate
+
+FROM [lib://AttachedFiles/PAYMENT_TEST.xlsx]
+(ooxml, embedded labels, table is PAYMENT_TEST)
+ORDER BY PROVIDER_ABN, LEGALNM, QTR2;
+
+// Alternative approach using PEEK function for more control
+/*
+LOAD *,
+    AUTONUMBERHASH256(RANK,
+    PROVIDER_ABN,
+    LEGALNM,
+    DELIVERY_ABN_STS,
+    LEGALENTYTYPNM,
+    SERVICE_TYPE,
+    EARLIEST_REGISTRATION_DATE,
+    LATEST_REGISTRATION_DATE,
+    PAYMENT,
+    QTR2) AS KEYSIS,
+    
+    // Calculate growth rate using PEEK to look at previous row
+    IF(PEEK(PROVIDER_ABN) = PROVIDER_ABN AND 
+       PEEK(LEGALNM) = LEGALNM AND 
+       PEEK(PAYMENT) > 0,
+       ((PAYMENT - PEEK(PAYMENT)) / PEEK(PAYMENT)) * 100,
+       NULL()) AS Payment_Growth_Rate
+
+FROM [lib://AttachedFiles/PAYMENT_TEST.xlsx]
+(ooxml, embedded labels, table is PAYMENT_TEST)
+ORDER BY PROVIDER_ABN, LEGALNM, QTR2;
+*/
