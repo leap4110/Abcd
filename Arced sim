@@ -1,0 +1,44 @@
+Here are several PROC SQL options to get distinct IDs for First Nations participants:
+
+**To get the list of distinct First Nations IDs:**
+```sas
+proc sql;
+    select distinct ID
+    from your_dataset
+    where abc = 1;
+quit;
+```
+
+**To count the distinct First Nations participants:**
+```sas
+proc sql;
+    select count(distinct ID) as distinct_first_nations_count
+    from your_dataset
+    where abc = 1;
+quit;
+```
+
+**To get both the proportion and distinct count:**
+```sas
+proc sql;
+    select 
+        count(distinct case when abc = 1 then ID end) as first_nations_distinct_count,
+        count(distinct ID) as total_distinct_count,
+        calculated first_nations_distinct_count / calculated total_distinct_count as proportion format=percent8.2
+    from your_dataset;
+quit;
+```
+
+**To create a dataset with the distinct First Nations IDs:**
+```sas
+proc sql;
+    create table first_nations_participants as
+    select distinct ID
+    from your_dataset
+    where abc = 1;
+quit;
+```
+
+Just remember to replace `your_dataset` with your actual dataset name and adjust the condition (`abc = 1`) if your First Nations indicator is coded differently.
+
+Which of these approaches matches what you're looking for?
