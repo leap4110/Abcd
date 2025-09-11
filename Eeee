@@ -1,0 +1,137 @@
+/* Create a master list of all unique PMTRQSTPRVDRABAN and SERVICE_TYPE combinations */
+proc sql;
+    create table master_keys as
+    select distinct PMTRQSTPRVDRABAN, SERVICE_TYPE
+    from (
+        select PMTRQSTPRVDRABAN, SERVICE_TYPE from table1
+        union
+        select PMTRQSTPRVDRABAN, SERVICE_TYPE from table2
+        union
+        select PMTRQSTPRVDRABAN, SERVICE_TYPE from table3
+        union
+        select PMTRQSTPRVDRABAN, SERVICE_TYPE from table4
+        union
+        select PMTRQSTPRVDRABAN, SERVICE_TYPE from table5
+        union
+        select PMTRQSTPRVDRABAN, SERVICE_TYPE from table6
+        union
+        select PMTRQSTPRVDRABAN, SERVICE_TYPE from table7
+    );
+quit;
+
+/* Join all tables to create wide format */
+proc sql;
+    create table consolidated_wide as
+    select 
+        m.PMTRQSTPRVDRABAN,
+        m.SERVICE_TYPE,
+        
+        /* Table 1 columns (e.g., SEP2023) */
+        t1.PARTICIPANTS_SEP2023,
+        t1.PYMTAMT_SEP2023,
+        
+        /* Table 2 columns (e.g., DEC2023) */
+        t2.PARTICIPANTS_DEC2023,
+        t2.PYMTAMT_DEC2023,
+        
+        /* Table 3 columns (e.g., MAR2024) */
+        t3.PARTICIPANTS_MAR2024,
+        t3.PYMTAMT_MAR2024,
+        
+        /* Table 4 columns (e.g., JUN2024) */
+        t4.PARTICIPANTS_JUN2024,
+        t4.PYMTAMT_JUN2024,
+        
+        /* Table 5 columns (e.g., SEP2024) */
+        t5.PARTICIPANTS_SEP2024,
+        t5.PYMTAMT_SEP2024,
+        
+        /* Table 6 columns (e.g., DEC2024) */
+        t6.PARTICIPANTS_DEC2024,
+        t6.PYMTAMT_DEC2024,
+        
+        /* Table 7 columns (e.g., MAR2025) */
+        t7.PARTICIPANTS_MAR2025,
+        t7.PYMTAMT_MAR2025
+        
+    from master_keys m
+    
+    left join table1 t1 
+        on m.PMTRQSTPRVDRABAN = t1.PMTRQSTPRVDRABAN 
+        and m.SERVICE_TYPE = t1.SERVICE_TYPE
+        
+    left join table2 t2 
+        on m.PMTRQSTPRVDRABAN = t2.PMTRQSTPRVDRABAN 
+        and m.SERVICE_TYPE = t2.SERVICE_TYPE
+        
+    left join table3 t3 
+        on m.PMTRQSTPRVDRABAN = t3.PMTRQSTPRVDRABAN 
+        and m.SERVICE_TYPE = t3.SERVICE_TYPE
+        
+    left join table4 t4 
+        on m.PMTRQSTPRVDRABAN = t4.PMTRQSTPRVDRABAN 
+        and m.SERVICE_TYPE = t4.SERVICE_TYPE
+        
+    left join table5 t5 
+        on m.PMTRQSTPRVDRABAN = t5.PMTRQSTPRVDRABAN 
+        and m.SERVICE_TYPE = t5.SERVICE_TYPE
+        
+    left join table6 t6 
+        on m.PMTRQSTPRVDRABAN = t6.PMTRQSTPRVDRABAN 
+        and m.SERVICE_TYPE = t6.SERVICE_TYPE
+        
+    left join table7 t7 
+        on m.PMTRQSTPRVDRABAN = t7.PMTRQSTPRVDRABAN 
+        and m.SERVICE_TYPE = t7.SERVICE_TYPE
+        
+    order by m.PMTRQSTPRVDRABAN, m.SERVICE_TYPE;
+quit;
+
+/* Export to Excel */
+proc export data=consolidated_wide
+    outfile="C:\path\to\your\consolidated_data.xlsx"
+    dbms=xlsx replace;
+    sheet="Consolidated_Wide";
+run;
+
+/* Alternative approach if your column names are different in each table */
+/* Use this if each table has the same column names (PARTICIPANTS, PYMTAMT) */
+/*
+proc sql;
+    create table consolidated_wide_alt as
+    select 
+        m.PMTRQSTPRVDRABAN,
+        m.SERVICE_TYPE,
+        
+        t1.PARTICIPANTS as PARTICIPANTS_SEP2023,
+        t1.PYMTAMT as PYMTAMT_SEP2023,
+        
+        t2.PARTICIPANTS as PARTICIPANTS_DEC2023,
+        t2.PYMTAMT as PYMTAMT_DEC2023,
+        
+        t3.PARTICIPANTS as PARTICIPANTS_MAR2024,
+        t3.PYMTAMT as PYMTAMT_MAR2024,
+        
+        t4.PARTICIPANTS as PARTICIPANTS_JUN2024,
+        t4.PYMTAMT as PYMTAMT_JUN2024,
+        
+        t5.PARTICIPANTS as PARTICIPANTS_SEP2024,
+        t5.PYMTAMT as PYMTAMT_SEP2024,
+        
+        t6.PARTICIPANTS as PARTICIPANTS_DEC2024,
+        t6.PYMTAMT as PYMTAMT_DEC2024,
+        
+        t7.PARTICIPANTS as PARTICIPANTS_MAR2025,
+        t7.PYMTAMT as PYMTAMT_MAR2025
+        
+    from master_keys m
+    left join table1 t1 on m.PMTRQSTPRVDRABAN = t1.PMTRQSTPRVDRABAN and m.SERVICE_TYPE = t1.SERVICE_TYPE
+    left join table2 t2 on m.PMTRQSTPRVDRABAN = t2.PMTRQSTPRVDRABAN and m.SERVICE_TYPE = t2.SERVICE_TYPE
+    left join table3 t3 on m.PMTRQSTPRVDRABAN = t3.PMTRQSTPRVDRABAN and m.SERVICE_TYPE = t3.SERVICE_TYPE
+    left join table4 t4 on m.PMTRQSTPRVDRABAN = t4.PMTRQSTPRVDRABAN and m.SERVICE_TYPE = t4.SERVICE_TYPE
+    left join table5 t5 on m.PMTRQSTPRVDRABAN = t5.PMTRQSTPRVDRABAN and m.SERVICE_TYPE = t5.SERVICE_TYPE
+    left join table6 t6 on m.PMTRQSTPRVDRABAN = t6.PMTRQSTPRVDRABAN and m.SERVICE_TYPE = t6.SERVICE_TYPE
+    left join table7 t7 on m.PMTRQSTPRVDRABAN = t7.PMTRQSTPRVDRABAN and m.SERVICE_TYPE = t7.SERVICE_TYPE
+    order by m.PMTRQSTPRVDRABAN, m.SERVICE_TYPE;
+quit;
+*/
