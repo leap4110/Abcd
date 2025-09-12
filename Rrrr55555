@@ -1,0 +1,46 @@
+Here's the complete PROC SQL conversion of both part_a and part_b:
+
+**Part A - PROC SQL equivalent:**
+```sql
+PROC SQL;
+CREATE TABLE part_b AS
+SELECT PRSNWITHDSBLTYID,
+       PMTRQSTPRVDRABN,
+       SERVICE_TYPE,
+       SUM(PYMTAMT) AS PYMTAMT
+FROM part_a
+GROUP BY PRSNWITHDSBLTYID, PMTRQSTPRVDRABN, SERVICE_TYPE;
+QUIT;
+```
+
+**Part B - PROC SQL equivalent with unique participants:**
+```sql
+PROC SQL;
+CREATE TABLE &OUTPUT. AS
+SELECT PMTRQSTPRVDRABN,
+       DELIVERY_ABN_STS,
+       SERVICE_TYPE,
+       COUNT(DISTINCT PRSNWITHDSBLTYID) AS PARTICIPANTS_&OUTPUT.,
+       SUM(PYMTAMT) AS PYMTAMT_&OUTPUT.
+FROM part_a
+GROUP BY PMTRQSTPRVDRABN, DELIVERY_ABN_STS, SERVICE_TYPE;
+QUIT;
+```
+
+**Key differences from original PROC SUMMARY:**
+1. **Part A**: Keeps all grouping variables in output (vs dropping _TYPE_ and _FREQ_)
+2. **Part B**: Uses `COUNT(DISTINCT PRSNWITHDSBLTYID)` to get true unique participants instead of just record frequency
+3. **Both**: More explicit about what columns are created and kept
+4. **Macro variables**: Uses `&OUTPUT.` just like the original code
+
+If you want to exactly replicate the original dropping behavior in Part A:
+```sql
+PROC SQL;
+CREATE TABLE part_b AS
+SELECT SUM(PYMTAMT) AS PYMTAMT
+FROM part_a
+GROUP BY PRSNWITHDSBLTYID, PMTRQSTPRVDRABN, SERVICE_TYPE;
+QUIT;
+```
+
+But typically you'd want to keep the grouping variables for context.
