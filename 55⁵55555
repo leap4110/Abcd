@@ -1,0 +1,54 @@
+Here's the SAS code to select one record per ABN with the earliest DATE_QUARTER:
+
+**Using PROC SORT and DATA Step:**
+```sas
+/* Sort by ABN and DATE_QUARTER */
+proc sort data=your_dataset;
+    by ABN DATE_QUARTER;
+run;
+
+/* Keep only the first record for each ABN */
+data result;
+    set your_dataset;
+    by ABN;
+    if first.ABN;
+run;
+```
+
+**Alternative using PROC SQL with GROUP BY:**
+```sas
+proc sql;
+    create table result as
+    select ABN,
+           LEGAL_NM,
+           PRVDRSTS,
+           MOTIFORPROFITIND,
+           RGSTRTNSTSDESC,
+           ABNPRMRYPRVRGHND,
+           QTR,
+           COUNT,
+           min(DATE_QUARTER) as DATE_QUARTER
+    from your_dataset
+    group by ABN
+    having DATE_QUARTER = min(DATE_QUARTER);
+quit;
+```
+
+**Most Efficient Approach - PROC SORT + DATA Step:**
+```sas
+/* Sort the data first */
+proc sort data=your_dataset out=sorted_data;
+    by ABN DATE_QUARTER;
+run;
+
+/* Select first record for each ABN */
+data final_result;
+    set sorted_data;
+    by ABN DATE_QUARTER;
+    if first.ABN then output;
+run;
+```
+
+The first approach is the most common and efficient in SAS. The `by ABN` statement with `first.ABN` will automatically select the first occurrence of each ABN value after the data is sorted by ABN and DATE_QUARTER.
+
+Replace `your_dataset` with your actual dataset name, and `result` or `final_result` with whatever you want to name your output dataset.
