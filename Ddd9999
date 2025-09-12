@@ -1,0 +1,42 @@
+Here are solutions without subqueries or window functions:
+
+**Using GROUP BY with MIN and JOIN:**
+```sql
+SELECT t1.*
+FROM your_table_name t1
+INNER JOIN (
+    SELECT ABN, MIN(DATE_QUARTER) as min_date
+    FROM your_table_name
+    GROUP BY ABN
+) t2 ON t1.ABN = t2.ABN AND t1.DATE_QUARTER = t2.min_date
+```
+
+Wait, that uses a subquery. Let me give you a different approach:
+
+**Using DISTINCT ON (PostgreSQL specific):**
+```sql
+SELECT DISTINCT ON (ABN) *
+FROM your_table_name
+ORDER BY ABN, DATE_QUARTER ASC
+```
+
+**Using GROUP BY with aggregate functions:**
+```sql
+SELECT ABN,
+       MIN(LEGAL_NM) as LEGAL_NM,
+       MIN(PRVDRSTS) as PRVDRSTS,
+       MIN(MOTIFORPROFITIND) as MOTIFORPROFITIND,
+       MIN(RGSTRTNSTSDESC) as RGSTRTNSTSDESC,
+       MIN(ABNPRMRYPRVRGHND) as ABNPRMRYPRVRGHND,
+       MIN(QTR) as QTR,
+       MIN(COUNT) as COUNT,
+       MIN(DATE_QUARTER) as DATE_QUARTER
+FROM your_table_name
+GROUP BY ABN
+```
+
+**Note:** The GROUP BY approach assumes that when you get the MIN(DATE_QUARTER), the MIN() of other fields will correspond to the same record, which may not always be true if there are mixed data types or specific ordering requirements.
+
+The `DISTINCT ON` approach (PostgreSQL) is the cleanest non-subquery, non-window function solution, but it's database-specific.
+
+What database system are you using? That would help me give you the most appropriate solution.
