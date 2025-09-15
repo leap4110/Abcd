@@ -1,0 +1,33 @@
+/* Convert PROC SUMMARY to PROC SQL - retaining original intent */
+
+PROC SQL;
+   CREATE TABLE DATA_1 AS
+   SELECT PMTRQSTPRVDRABN,
+          DELIVERY_ABN_BTS,
+          SUPPCLASSCD,
+          SUPPCATCD,
+          SILINDICATOR,
+          SDAINDICATOR,
+          MGTTYPEDESC,
+          NEW,
+          PRSNWITHDSBLTID,
+          SA3CD2021,
+          MMM,
+          SUM(SUPP_DEL_COST) AS SUPP_DEL_COST
+   FROM OUTBTD.BT_PMTS_DELIVERED
+   WHERE PMTRQSTPRVDRABN IS NOT NULL
+     AND PMTRQSTPRVDRABN NOT IN ('', ' ')
+     AND PMTRQSTPRVDRABN NOT IN ('DRCTE', 'EXCLS', 'ONLIN', 'REIMB', 'DSBLT', 'NOADN', 'OVRSE')
+     AND PMTRQSTPRVDRABN NOT CONTAINS ' '  /* Eliminates ABNs that are incomplete or contain a space */
+   GROUP BY PMTRQSTPRVDRABN,
+            DELIVERY_ABN_BTS,
+            SUPPCLASSCD,
+            SUPPCATCD,
+            SILINDICATOR,
+            SDAINDICATOR,
+            MGTTYPEDESC,
+            NEW,
+            PRSNWITHDSBLTID,
+            SA3CD2021,
+            MMM;
+QUIT;
