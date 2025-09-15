@@ -1,0 +1,234 @@
+/*------------------------------------------------------------------------------------------------------------------------
+/*  PROVIDER QLIK APP - DATASET CREATION
+/*
+/*  Uses the Payments Delivered BT for each quarter for the Master Table.
+/*  For the quarter to match the most recent payments datat, creates lookup tables for all providers and participants
+/* 
+-------------------------------------------------------------------------------------------------------------------------*/
+
+LIBNAME OUTBTD "\\prntxnas001\sasstorage\NDISMarketdata\Data\Business Tables\Payments BT\Payments Delivered\";
+LIBNAME OUTBTP "\\prntxnas001\sasstorage\NDISMarketdata\Data\Business Tables\Participants BT\";
+LIBNAME OUTPRVAP "\\prntxnas001\sasstorage\NDISMarketdata\Projects\Qlik\Provider App\Data Model Files\";
+
+
+/*------------------------------------------------------------------------------------------------------------------------
+1. Use Payments Delivered BT for each quarter for the Master Table
+-------------------------------------------------------------------------------------------------------------------------*/
+
+%MACRO MASTER_TABLE (QTR);
+
+/* PROC SQL equivalent of PROC SUMMARY retains only the fields from the Payments Delivered Business Table that are required for the Qlik app. Most participant demographics 
+	in the app are sourced from the full and most recent listing of participants. This avoids retaining the same (or very similar) data 
+	for every participant in every quarter */
+
+PROC SQL;
+CREATE TABLE DATA_1 AS
+SELECT 
+	QTR, 
+	PMTRQSTPRVDRABN, 
+	DELIVERY_ABN_STS, 
+	SUPPCLASSCD, 
+	SUPPCATCD, 
+	SILINDICATOR, 
+	SDAINDICATOR, 
+	MGTTYPDESC_NEW, 
+	PRSNWITHDSBLTYID, 
+	SA3CD2021, 
+	MMM,
+	SUM(SUPP_DEL_COST) AS SUPP_DEL_COST
+FROM OUTBTD.BT_PMTS_DELIVERED&QTR.
+WHERE PMTRQSTPRVDRABN IS NOT NULL 
+	AND PMTRQSTPRVDRABN NOT IN ('', ' ') 
+	AND PMTRQSTPRVDRABN NOT IN ('DRCTE', 'EXCLS', 'ONLIN', 'REIMB', 'DSBLT', 'NOABN', 'OVRSE')
+	AND PMTRQSTPRVDRABN NOT CONTAINS ''  /* Eliminates ABNs that are incomplete or contain a space e.g. payment ID 300323297489_0001_000_000 */
+GROUP BY QTR, PMTRQSTPRVDRABN, DELIVERY_ABN_STS, SUPPCLASSCD, SUPPCATCD, SILINDICATOR, 
+	SDAINDICATOR, MGTTYPDESC_NEW, PRSNWITHDSBLTYID, SA3CD2021, MMM;
+QUIT;
+
+/* Now let's create the keys we need for later */ 
+
+DATA OUTPRVAP.MASTER_TABLE_&QTR.;
+	SET DATA_1; 
+ 		PAYMENT_KEY = CATX('_',QTR, PMTRQSTPRVDRABN, SUPPCLASSCD, SUPPCATCD, 
+		MGTTYPDESC_NEW, SA3CD2021, MMM, SILINDICATOR, SDAINDICATOR);
+		PARTICIPANT_KEY = PRSNWITHDSBLTYID;
+		PROVIDER_KEY = PMTRQSTPRVDRABN;
+RUN; 
+
+%MEND MASTER_TABLE;
+
+/*	%MASTER_TABLE (_2223_Q1);
+	%MASTER_TABLE (_2223_Q2); 
+	%MASTER_TABLE (_2223_Q3);
+	%MASTER_TABLE (_2223_Q4);
+	 
+	%MASTER_TABLE (_2324_Q1); 
+	%MASTER_TABLE (_2324_Q2);
+	%MASTER_TABLE (_2324_Q3);
+	%MASTER_TABLE (_2324_Q4);
+
+	%MASTER_TABLE (_2425_Q1);
+	%MASTER_TABLE (_2425_Q2);
+	%MASTER_TABLE (_2425_Q3); */
+	%MASTER_TABLE (_2425_Q4);
+
+/*------------------------------------------------------------------------------------------------------------------------
+2. Now obtain the Point in Time data (latest quarter only) for Provider and participant demographics
+-------------------------------------------------------------------------------------------------------------------------*/
+
+%MACRO DEFINELIB (ExtDate, LibName);
+	%* Define the macro variables for the month;
+	DATA _null_;
+
+	%* Set up the text for the macro variable;
+	EOFY  = INTNX('YEAR.7', &ExtDate.,0,'E');
+	FIN_YEAR = CAT(YEAR(EOFY)-1,"-", MOD(YEAR(EOFY),100)); 
+	FOLDER  = CAT(YEAR(&ExtDate.),"-",PUT(MONTH(&ExtDate.),Z2.)," ",STRIP(PUT(&ExtDate.,MONNAME.)));
+
+	%* Create the macro variables;
+	CALL SYMPUTX ("FIN_YEAR", STRIP(FIN_YEAR));
+	CALL SYMPUTX("FOLDER", STRIP(FOLDER));
+	RUN;
+
+	%PUT &=FIN_YEAR &=FOLDER;
+
+	%* Define libname for the month;
+	LIBNAME &LibName. CLEAR;
+	LIBNAME &LibName. "\\PRNTXNAS001\SASSTORAGE\SASDATA\NDISGROUPSASDATA\04 - NDIS MONTHLY DATASETS\&FIN_YEAR.\&FOLDER.\SAS datasets\authorised";
+
+%MEND DEFINELIB;
+
+%MACRO LAGLIB(ExtDate,LibName);
+	%DEFINELIB(&ExtDate., &LibName.);
+	%* Reference definelib library and create a separate library with a 3 month lag for payment datasets;
+	%LET LagDate = %SYSFUNC(INTNX(MONTH,&ExtDate.,+3,E));
+	%DEFINELIB(&LagDate., &LibName._Lag);
+%MEND LAGLIB;
+
+/*------------------------------------------------------------------------------------------------------------------------
+STEP 3: Now obtain the Point in Time data (latest quarter only) for Provider and participant demographics
+-------------------------------------------------------------------------------------------------------------------------*/
+
+%MACRO RETRIEVE_PIT (PERIOD_STRT, PERIOD_END, QTR, QTR2);
+
+/* This data will be used in the app to provide participant and provider details for any period represented in 
+	the report. Only the latest iteration of these tables will be used. For key elements such as provider status and 
+	participant SA3 at the time of payment, these are loaded into the payments data as at the end of each quarter so 
+	will be represented correctly, regardless of the current status and location reported currently. */
+
+/* Load provider details for any Primary Provider ABN. Qlik app only needs most recent quarter */
+PROC SQL; CREATE TABLE OUTPRVAP.ALL_PRV_&QTR. AS  
+	SELECT 
+		&QTR2. AS QTR, 
+		ABN AS PROVIDER_KEY, LEGALNM, LEGALENTYTYPNM, PRVDRSTS, RGSTRTNSTSDESC,  NOTFORPROFITIND
+	FROM DB.DSS_PROVIDERS
+	WHERE ABNPrmryPrvdrInd = 1; /* Note 10 Sep 2025: removed filter on PRVDRSTS NE 'NOT YET ACTIVE' */
+RUN;   
+
+/* Load participant details for any participant who has ever been active. Qlik app only needs data as at most recent quarter */
+
+ PROC SQL; CREATE TABLE OUTPRVAP.ALL_PTC_&QTR. AS  
+	SELECT 
+		QTR, 
+		PRSNWITHDSBLTYID AS PARTICIPANT_KEY, 
+		EVERELIGBLIND, 
+		SA3CD2021, 
+		CALD_STATUS AS CALDSTS, 
+		FIRST_NATIONS_STATUS AS ATSISTS, 
+		PRIMARY_DISABILITY,
+		AGE_GROUP_1 AS AGE_GROUP,
+		GENDER
+	FROM OUTBTP.bt_participants&QTR.
+	WHERE EverEligblInd = 1;
+RUN; 
+		
+%MEND RETRIEVE_PIT;
+
+/* Change here for the most current Payments BT Quarter */
+%LAGLIB ("01JUN2025"D,db); %RETRIEVE_PIT ('01MAR2025'D, '30JUN2025'D, _2425_Q4, '2425_Q4');
+
+/*------------------------------------------------------------------------------------------------------------------------
+STEP 4: Now to split up the data into our Dim and Bridge Tables and export to CSVs
+-------------------------------------------------------------------------------------------------------------------------*/
+%MACRO APP_TABLES (QTR);
+
+/* BRIDGE table - Create and Export - only has the keys and quarter */
+PROC SQL;
+CREATE TABLE PRV_BRIDGE_&QTR. AS
+SELECT DISTINCT PAYMENT_KEY, PROVIDER_KEY, PARTICIPANT_KEY  
+FROM OUTPRVAP.MASTER_TABLE_&QTR.;
+QUIT;
+
+PROC EXPORT 
+    DATA= work.PRV_BRIDGE_&QTR.
+	OUTFILE= "\\prntxnas001\sasstorage\NDISMarketdata\Projects\Qlik\Provider App\Data Model Files\PRV_BRIDGE_&QTR..CSV"
+	DBMS=CSV REPLACE;
+ RUN;
+
+ /* DIM_PAYMENT - Create and Export - summarised to the payment key level (no participant info) */
+PROC SQL;
+CREATE TABLE PRV_DIM_PAYMENT_&QTR. AS
+SELECT 
+	PAYMENT_KEY,
+	QTR,
+	SUPPCLASSCD,
+	SUPPCATCD,
+	MGTTYPDESC_NEW,
+	SA3CD2021,
+	MMM,
+	SILINDICATOR,
+	SDAINDICATOR,
+	SUM(SUPP_DEL_COST) AS SUPP_DEL_COST
+FROM OUTPRVAP.MASTER_TABLE_&QTR.
+GROUP BY PAYMENT_KEY, QTR, SUPPCLASSCD, SUPPCATCD, MGTTYPDESC_NEW, SA3CD2021, MMM, SILINDICATOR, SDAINDICATOR;
+QUIT;
+
+PROC EXPORT
+    DATA= PRV_DIM_PAYMENT_&QTR. 
+	OUTFILE= "\\prntxnas001\sasstorage\NDISMarketdata\Projects\Qlik\Provider App\Data Model Files\PRV_DIM_PAYMENT_&QTR..CSV"
+	DBMS=CSV REPLACE;
+ RUN; 
+
+/*--------------------------------------------------------------------------------------------------------------------*/
+/* DIM_PARTICIPANT - open ONLY most recent quarter from OUTPRVAP and export as CSV */
+ PROC EXPORT
+   DATA= OUTPRVAP.ALL_PTC_&QTR. (DROP= SA3CD2021 QTR) /* SA3 was needed from the participant table to join onto payments but as it's part of the payment_key, 
+												 we no longer need it in the app's participant table. */
+	OUTFILE= "\\prntxnas001\sasstorage\NDISMarketdata\Projects\Qlik\Provider App\Data Model Files\PRV_DIM_PARTICIPANT_&QTR..CSV"
+	DBMS=CSV REPLACE;
+ RUN; 
+
+/* DIM_PROVIDER - open ONLY most recent quarter from OUTPRVAP and export as CSV */
+ PROC EXPORT
+    DATA= OUTPRVAP.ALL_PRV_&QTR.
+	OUTFILE= "\\prntxnas001\sasstorage\NDISMarketdata\Projects\Qlik\Provider App\Data Model Files\PRV_DIM_PROVIDER_&QTR..CSV"
+	DBMS=CSV REPLACE;
+ RUN; 
+
+%MEND APP_TABLES ;
+
+/*	%APP_TABLES (_2223_Q3);
+	%APP_TABLES (_2223_Q4);
+	 
+	%APP_TABLES (_2324_Q1); 
+	%APP_TABLES (_2324_Q2);
+	%APP_TABLES (_2324_Q3);
+	%APP_TABLES (_2324_Q4);
+
+	%APP_TABLES (_2425_Q1); 
+	%APP_TABLES (_2425_Q2); 
+	%APP_TABLES (_2425_Q3); */
+	%APP_TABLES (_2425_Q4);
+
+
+
+
+PROC SQL;
+CREATE TABLE SUPP_OPTIONS AS
+SELECT 
+	SUPPCLASS,
+	PYMTRQSTSUPPCATNM,
+	COUNT(*) AS _FREQ_
+FROM WORK.PMTS_DELIVERED_1_2324_Q3
+GROUP BY SUPPCLASS, PYMTRQSTSUPPCATNM;
+QUIT;
