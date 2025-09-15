@@ -1,0 +1,24 @@
+Here's the set analysis expression to get the top 10 providers by total payment amount in QlikSense:
+
+```
+{<provider = {"=Rank(Sum(payment)) <= 10"}>}
+```
+
+You would use this in a measure like:
+
+```
+Sum({<provider = {"=Rank(Sum(payment)) <= 10"}>} payment)
+```
+
+Or if you want to use it in a dimension to show only the top 10 providers:
+
+```
+=If(Rank(Sum(payment)) <= 10, provider)
+```
+
+The key parts:
+- `Rank(Sum(payment))` calculates the rank based on total payment amounts
+- `<= 10` limits it to the top 10
+- The set analysis `{<provider = {"=..."}>}` filters the data to only include those top 10 providers
+
+Note that this uses ascending rank by default (highest payments get rank 1). If you need descending rank, you can use `Rank(-Sum(payment))` instead.
