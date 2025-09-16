@@ -1,0 +1,55 @@
+Here are QlikSense if statements to translate Australian states into their codes:
+
+## **Full State Names to Codes:**
+```
+If(State = 'New South Wales', 'NSW',
+If(State = 'Victoria', 'VIC', 
+If(State = 'Queensland', 'QLD',
+If(State = 'Western Australia', 'WA',
+If(State = 'South Australia', 'SA',
+If(State = 'Tasmania', 'TAS',
+If(State = 'Northern Territory', 'NT',
+If(State = 'Australian Capital Territory', 'ACT', State))))))))
+```
+
+## **Alternative with Pick/Match (More Efficient):**
+```
+Pick(Match(Upper(State),
+'NEW SOUTH WALES',
+'VICTORIA', 
+'QUEENSLAND',
+'WESTERN AUSTRALIA',
+'SOUTH AUSTRALIA',
+'TASMANIA',
+'NORTHERN TERRITORY',
+'AUSTRALIAN CAPITAL TERRITORY'),
+'NSW','VIC','QLD','WA','SA','TAS','NT','ACT')
+```
+
+## **Handling Variations/Abbreviations:**
+```
+If(Upper(State) = 'NEW SOUTH WALES' or Upper(State) = 'NSW', 'NSW',
+If(Upper(State) = 'VICTORIA' or Upper(State) = 'VIC', 'VIC',
+If(Upper(State) = 'QUEENSLAND' or Upper(State) = 'QLD', 'QLD',
+If(Upper(State) = 'WESTERN AUSTRALIA' or Upper(State) = 'WA', 'WA',
+If(Upper(State) = 'SOUTH AUSTRALIA' or Upper(State) = 'SA', 'SA',
+If(Upper(State) = 'TASMANIA' or Upper(State) = 'TAS', 'TAS',
+If(Upper(State) = 'NORTHERN TERRITORY' or Upper(State) = 'NT', 'NT',
+If(Upper(State) = 'AUSTRALIAN CAPITAL TERRITORY' or Upper(State) = 'ACT', 'ACT', State))))))))
+```
+
+## **Most Robust Version (Handles Multiple Formats):**
+```
+Pick(Match(Upper(Trim(State)),
+'NEW SOUTH WALES','NSW',
+'VICTORIA','VIC',
+'QUEENSLAND','QLD', 
+'WESTERN AUSTRALIA','WA',
+'SOUTH AUSTRALIA','SA',
+'TASMANIA','TAS',
+'NORTHERN TERRITORY','NT',
+'AUSTRALIAN CAPITAL TERRITORY','ACT'),
+'NSW','NSW','VIC','VIC','QLD','QLD','WA','WA','SA','SA','TAS','TAS','NT','NT','ACT','ACT')
+```
+
+The **Pick/Match** approach is generally more efficient and cleaner than nested If statements, especially when handling multiple variations of the same state name.
