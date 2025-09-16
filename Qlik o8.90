@@ -1,0 +1,93 @@
+Looking at the original SAS code and your description of 1:1 relationships, I can identify several potential data accuracy issues that could cause percentages not to add up to 100%:
+
+## **Primary Issue: Participant Data Mismatch**
+
+### **1. Point-in-Time vs Historical Data Problem**
+```sas
+/* PAYMENTS DATA: Historical quarterly data */
+FROM OUTBTD.BT_PMTS_DELIVERED&QTR.
+
+/* PARTICIPANT DATA: Latest quarter only */
+FROM OUTBTP.bt_participants&QTR.
+WHERE EverEligblInd = 1;
+```
+
+**The Problem**: You're joining **historical payment data** with **current participant demographics**. A participant's age group in 2024-25 Q4 might be different from their age group when the payment was made in 2022-23 Q1.
+
+### **2. Missing Participants**
+Payments might exist for participants who are no longer in the latest participant table due to:
+- Data retention policies
+- Participant status changes
+- System updates
+
+## **Specific Issues in Age Breakdown:**
+
+### **1. Orphaned Payments**
+```sas
+/* These payments won't match to any participant */
+SELECT PAYMENT_KEY, PARTICIPANT_KEY 
+FROM DIM_PAYMENT 
+WHERE PARTICIPANT_KEY NOT IN (SELECT PARTICIPANT_KEY FROM DIM_PARTICIPANT)
+```
+
+### **2. Age Group Changes Over Time**
+A participant who was "25-34" in 2023 might now be "35-44" in 2025, causing:
+- Historical payments to show current age group
+- Incorrect age distribution for historical periods
+
+## **Solutions to Fix the Percentage Issue:**
+
+### **Option 1: Capture Age at Time of Payment**
+```sas
+/* Add age group to the master table creation */
+PROC SQL;
+CREATE TABLE OUTPRVAP.MASTER_TABLE_&QTR. AS
+SELECT 
+    /* existing fields */
+    p.AGE_GROUP_1 AS AGE_GROUP_AT_PAYMENT,
+    p.PRIMARY_DISABILITY AS DISABILITY_AT_PAYMENT
+FROM OUTBTD.BT_PMTS_DELIVERED&QTR. pay
+LEFT JOIN OUTBTP.bt_participants&QTR. p 
+    ON pay.PRSNWITHDSBLTYID = p.PRSNWITHDSBLTYID
+WHERE /* existing conditions */;
+```
+
+### **Option 2: Use Participant Data from Same Quarter**
+Instead of using only the latest participant data, use participant data from the same quarter as the payments:
+```sas
+%MACRO RETRIEVE_PIT (PERIOD_STRT, PERIOD_END, QTR, QTR2);
+/* Use participant data from SAME quarter as payments */
+PROC SQL; 
+CREATE TABLE OUTPRVAP.ALL_PTC_&QTR. AS  
+SELECT /* fields */
+FROM OUTBTP.bt_participants&QTR.  /* Same quarter as payments */
+WHERE EverEligblInd = 1;
+```
+
+### **Option 3: Data Quality Checks**
+Add validation to identify the scope of the problem:
+```sas
+/* Check for orphaned payments */
+PROC SQL;
+CREATE TABLE ORPHANED_PAYMENTS AS
+SELECT p.PARTICIPANT_KEY, COUNT(*) as PAYMENT_COUNT
+FROM DIM_PAYMENT p
+LEFT JOIN DIM_PARTICIPANT pt ON p.PARTICIPANT_KEY = pt.PARTICIPANT_KEY
+WHERE pt.PARTICIPANT_KEY IS NULL
+GROUP BY p.PARTICIPANT_KEY;
+
+/* Check percentage of orphaned payments */
+SELECT 
+    SUM(CASE WHEN pt.PARTICIPANT_KEY IS NULL THEN 1 ELSE 0 END) / COUNT(*) * 100 as PCT_ORPHANED
+FROM DIM_PAYMENT p
+LEFT JOIN DIM_PARTICIPANT pt ON p.PARTICIPANT_KEY = pt.PARTICIPANT_KEY;
+```
+
+## **Immediate Diagnostic Steps:**
+
+1. **Check for NULL age groups** in your Qlik front-end
+2. **Verify participant key matches** between payment and participant tables  
+3. **Count total participants** vs **unique participants in payments**
+4. **Check for missing participant records** for payment data
+
+The root cause is likely that your historical payments contain participant keys that either don't exist in the current participant dimension or have changed demographic attributes since the payment occurred.
