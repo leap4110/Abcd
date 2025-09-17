@@ -1,0 +1,275 @@
+/*------------------------------------------------------------------------------------------------------------------------
+/*  PROVIDER QLIK APP - CONSOLIDATED FACT TABLE CREATION
+/*
+/*  Consolidates the bridge and dimensional tables into a single fact table
+/*  Retains all original business logic and data transformations
+/* 
+-------------------------------------------------------------------------------------------------------------------------*/
+
+LIBNAME OUTBTD "\\prntxnas001\sasstorage\NDISMarketdata\Data\Business Tables\Payments BT\Payments Delivered\";
+LIBNAME OUTBTP "\\prntxnas001\sasstorage\NDISMarketdata\Data\Business Tables\Participants BT\";
+LIBNAME OUTPRVAP "\\prntxnas001\sasstorage\NDISMarketdata\Projects\Qlik\Provider App\Data Model Files\";
+
+/*------------------------------------------------------------------------------------------------------------------------
+1. Use Payments Delivered BT for each quarter for the Master Table (unchanged)
+-------------------------------------------------------------------------------------------------------------------------*/
+
+%MACRO MASTER_TABLE (QTR);
+
+/* Proc summary retains only the fields from the Payments Delivered Business Table that are required for the Qlik app. Most participant demographics 
+	in the app are sourced from the full and most recent listing of participants. This avoids retaining the same (or very similar) data 
+	for every participant in every quarter */
+
+PROC SUMMARY DATA= OUTBTD.BT_PMTS_DELIVERED&QTR. NWAY MISSING;
+	WHERE PMTRQSTPRVDRABN IS NOT NULL 
+		AND PMTRQSTPRVDRABN NOT IN ('', ' ') 
+		AND PMTRQSTPRVDRABN NOT IN ('DRCTE', 'EXCLS', 'ONLIN', 'REIMB', 'DSBLT', 'NOABN', 'OVRSE')
+		AND PMTRQSTPRVDRABN NOT CONTAINS ''  /* Eliminates ABNs that are incomplete or contain a space e.g. payment ID 300323297489_0001_000_000 */;
+	CLASS QTR PMTRQSTPRVDRABN DELIVERY_ABN_STS SUPPCLASSCD SUPPCATCD SILINDICATOR 
+		SDAINDICATOR MGTTYPDESC_NEW PRSNWITHDSBLTYID SA3CD2021 MMM ;
+	VAR SUPP_DEL_COST;
+	OUTPUT OUT= DATA_1(DROP= _TYPE_) SUM(SUPP_DEL_COST) = SUPP_DEL_COST;
+RUN; 
+
+/* Now let's create the keys we need for later */ 
+
+DATA OUTPRVAP.MASTER_TABLE_&QTR.;
+	SET DATA_1; 
+ 		PAYMENT_KEY = CATX('_',QTR, PMTRQSTPRVDRABN, SUPPCLASSCD, SUPPCATCD, 
+		MGTTYPDESC_NEW, SA3CD2021, MMM, SILINDICATOR, SDAINDICATOR);
+		PARTICIPANT_KEY = PRSNWITHDSBLTYID;
+		PROVIDER_KEY = PMTRQSTPRVDRABN;
+RUN; 
+
+%MEND MASTER_TABLE;
+
+/*	%MASTER_TABLE (_2223_Q1);
+	%MASTER_TABLE (_2223_Q2); 
+	%MASTER_TABLE (_2223_Q3);
+	%MASTER_TABLE (_2223_Q4);
+	 
+	%MASTER_TABLE (_2324_Q1); 
+	%MASTER_TABLE (_2324_Q2);
+	%MASTER_TABLE (_2324_Q3);
+	%MASTER_TABLE (_2324_Q4);
+
+	%MASTER_TABLE (_2425_Q1);
+	%MASTER_TABLE (_2425_Q2);
+	%MASTER_TABLE (_2425_Q3); */
+	%MASTER_TABLE (_2425_Q4);
+
+/*------------------------------------------------------------------------------------------------------------------------
+2. Point in Time data macros (unchanged)
+-------------------------------------------------------------------------------------------------------------------------*/
+
+%MACRO DEFINELIB (ExtDate, LibName);
+	%* Define the macro variables for the month;
+	DATA _null_;
+
+	%* Set up the text for the macro variable;
+	EOFY  = INTNX('YEAR.7', &ExtDate.,0,'E');
+	FIN_YEAR = CAT(YEAR(EOFY)-1,"-", MOD(YEAR(EOFY),100)); 
+	FOLDER  = CAT(YEAR(&ExtDate.),"-",PUT(MONTH(&ExtDate.),Z2.)," ",STRIP(PUT(&ExtDate.,MONNAME.)));
+
+	%* Create the macro variables;
+	CALL SYMPUTX ("FIN_YEAR", STRIP(FIN_YEAR));
+	CALL SYMPUTX("FOLDER", STRIP(FOLDER));
+	RUN;
+
+	%PUT &=FIN_YEAR &=FOLDER;
+
+	%* Define libname for the month;
+	LIBNAME &LibName. CLEAR;
+	LIBNAME &LibName. "\\PRNTXNAS001\SASSTORAGE\SASDATA\NDISGROUPSASDATA\04 - NDIS MONTHLY DATASETS\&FIN_YEAR.\&FOLDER.\SAS datasets\authorised";
+
+%MEND DEFINELIB;
+
+%MACRO LAGLIB(ExtDate,LibName);
+	%DEFINELIB(&ExtDate., &LibName.);
+	%* Reference definelib library and create a separate library with a 3 month lag for payment datasets;
+	%LET LagDate = %SYSFUNC(INTNX(MONTH,&ExtDate.,+3,E));
+	%DEFINELIB(&LagDate., &LibName._Lag);
+%MEND LAGLIB;
+
+/*------------------------------------------------------------------------------------------------------------------------
+3. Point in Time data retrieval (unchanged)
+-------------------------------------------------------------------------------------------------------------------------*/
+
+%MACRO RETRIEVE_PIT (PERIOD_STRT, PERIOD_END, QTR, QTR2);
+
+/* This data will be used in the app to provide participant and provider details for any period represented in 
+	the report. Only the latest iteration of these tables will be used. For key elements such as provider status and 
+	participant SA3 at the time of payment, these are loaded into the payments data as at the end of each quarter so 
+	will be represented correctly, regardless of the current status and location reported currently. */
+
+/* Load provider details for any Primary Provider ABN. Qlik app only needs most recent quarter */
+PROC SQL; CREATE TABLE OUTPRVAP.ALL_PRV_&QTR. AS  
+	SELECT 
+		&QTR2. AS QTR, 
+		ABN AS PROVIDER_KEY, LEGALNM, LEGALENTYTYPNM, PRVDRSTS, RGSTRTNSTSDESC,  NOTFORPROFITIND
+	FROM DB.DSS_PROVIDERS
+	WHERE ABNPrmryPrvdrInd = 1; /* Note 10 Sep 2025: removed filter on PRVDRSTS NE 'NOT YET ACTIVE' */
+RUN;   
+
+/* Load participant details for any participant who has ever been active. Qlik app only needs data as at most recent quarter */
+
+ PROC SQL; CREATE TABLE OUTPRVAP.ALL_PTC_&QTR. AS  
+	SELECT 
+		QTR, 
+		PRSNWITHDSBLTYID AS PARTICIPANT_KEY, 
+		EVERELIGBLIND, 
+		SA3CD2021, 
+		CALD_STATUS AS CALDSTS, 
+		FIRST_NATIONS_STATUS AS ATSISTS, 
+		PRIMARY_DISABILITY,
+		AGE_GROUP_1 AS AGE_GROUP,
+		GENDER
+	FROM OUTBTP.bt_participants&QTR.
+	WHERE EverEligblInd = 1;
+RUN; 
+		
+%MEND RETRIEVE_PIT;
+
+/* Change here for the most current Payments BT Quarter */
+%LAGLIB ("01JUN2025"D,db); %RETRIEVE_PIT ('01MAR2025'D, '30JUN2025'D, _2425_Q4, '2425_Q4');
+
+/*------------------------------------------------------------------------------------------------------------------------
+4. CONSOLIDATED FACT TABLE - Replaces the original bridge and dimension table approach
+-------------------------------------------------------------------------------------------------------------------------*/
+
+%MACRO CONSOLIDATED_FACT_TABLE (QTR);
+
+/* Create consolidated fact table by joining all dimensions with the master table */
+PROC SQL;
+CREATE TABLE CONSOLIDATED_FACT_&QTR. AS
+SELECT 
+    /* Keys from original bridge table */
+    MT.PAYMENT_KEY,
+    MT.PROVIDER_KEY,
+    MT.PARTICIPANT_KEY,
+    
+    /* Payment dimension fields */
+    MT.QTR,
+    MT.SUPPCLASSCD,
+    MT.SUPPCATCD, 
+    MT.MGTTYPDESC_NEW,
+    MT.SA3CD2021 AS PAYMENT_SA3CD2021,  /* Renamed to distinguish from participant SA3 */
+    MT.MMM,
+    MT.SILINDICATOR,
+    MT.SDAINDICATOR,
+    MT.SUPP_DEL_COST,
+    
+    /* Provider dimension fields */
+    PRV.LEGALNM,
+    PRV.LEGALENTYTYPNM,
+    PRV.PRVDRSTS,
+    PRV.RGSTRTNSTSDESC,
+    PRV.NOTFORPROFITIND,
+    
+    /* Participant dimension fields */
+    PTC.EVERELIGBLIND,
+    PTC.CALDSTS,
+    PTC.ATSISTS,
+    PTC.PRIMARY_DISABILITY,
+    PTC.AGE_GROUP,
+    PTC.GENDER
+
+FROM OUTPRVAP.MASTER_TABLE_&QTR. MT
+
+/* Left join with provider dimension to preserve all payment records */
+LEFT JOIN OUTPRVAP.ALL_PRV_&QTR. PRV
+    ON MT.PROVIDER_KEY = PRV.PROVIDER_KEY
+
+/* Left join with participant dimension to preserve all payment records */  
+LEFT JOIN OUTPRVAP.ALL_PTC_&QTR. PTC
+    ON MT.PARTICIPANT_KEY = PTC.PARTICIPANT_KEY;
+
+QUIT;
+
+/* Export the consolidated fact table */
+PROC EXPORT
+    DATA= CONSOLIDATED_FACT_&QTR.
+    OUTFILE= "\\prntxnas001\sasstorage\NDISMarketdata\Projects\Qlik\Provider App\Data Model Files\CONSOLIDATED_FACT_&QTR..CSV"
+    DBMS=CSV REPLACE;
+RUN;
+
+/* Optional: Create a summary report to validate the consolidation */
+PROC MEANS DATA=CONSOLIDATED_FACT_&QTR. N NMISS SUM;
+    VAR SUPP_DEL_COST;
+    CLASS QTR;
+    TITLE "Consolidated Fact Table Summary - Quarter &QTR.";
+RUN;
+
+/* Optional: Check for any missing joins */
+PROC SQL;
+    SELECT 
+        COUNT(*) AS Total_Records,
+        SUM(CASE WHEN LEGALNM IS NULL THEN 1 ELSE 0 END) AS Missing_Provider_Data,
+        SUM(CASE WHEN GENDER IS NULL THEN 1 ELSE 0 END) AS Missing_Participant_Data,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Cost FORMAT=COMMA15.2
+    FROM CONSOLIDATED_FACT_&QTR.;
+QUIT;
+
+%MEND CONSOLIDATED_FACT_TABLE;
+
+/* Execute for the current quarter */
+%CONSOLIDATED_FACT_TABLE (_2425_Q4);
+
+/* 
+For multiple quarters, uncomment and run as needed:
+%CONSOLIDATED_FACT_TABLE (_2223_Q1);
+%CONSOLIDATED_FACT_TABLE (_2223_Q2);
+%CONSOLIDATED_FACT_TABLE (_2223_Q3);
+%CONSOLIDATED_FACT_TABLE (_2223_Q4);
+%CONSOLIDATED_FACT_TABLE (_2324_Q1);
+%CONSOLIDATED_FACT_TABLE (_2324_Q2);
+%CONSOLIDATED_FACT_TABLE (_2324_Q3);
+%CONSOLIDATED_FACT_TABLE (_2324_Q4);
+%CONSOLIDATED_FACT_TABLE (_2425_Q1);
+%CONSOLIDATED_FACT_TABLE (_2425_Q2);
+%CONSOLIDATED_FACT_TABLE (_2425_Q3);
+*/
+
+/*------------------------------------------------------------------------------------------------------------------------
+5. Optional: Create a single consolidated table across all quarters
+-------------------------------------------------------------------------------------------------------------------------*/
+
+%MACRO ALL_QUARTERS_FACT_TABLE;
+
+/* Stack all quarterly fact tables into one comprehensive table */
+DATA OUTPRVAP.CONSOLIDATED_FACT_ALL_QUARTERS;
+    SET 
+        /* Uncomment quarters as needed */
+        /* CONSOLIDATED_FACT__2223_Q1
+        CONSOLIDATED_FACT__2223_Q2
+        CONSOLIDATED_FACT__2223_Q3
+        CONSOLIDATED_FACT__2223_Q4
+        CONSOLIDATED_FACT__2324_Q1
+        CONSOLIDATED_FACT__2324_Q2
+        CONSOLIDATED_FACT__2324_Q3
+        CONSOLIDATED_FACT__2324_Q4
+        CONSOLIDATED_FACT__2425_Q1
+        CONSOLIDATED_FACT__2425_Q2
+        CONSOLIDATED_FACT__2425_Q3 */
+        CONSOLIDATED_FACT__2425_Q4
+        ;
+RUN;
+
+/* Export the all-quarters consolidated table */
+PROC EXPORT
+    DATA= OUTPRVAP.CONSOLIDATED_FACT_ALL_QUARTERS
+    OUTFILE= "\\prntxnas001\sasstorage\NDISMarketdata\Projects\Qlik\Provider App\Data Model Files\CONSOLIDATED_FACT_ALL_QUARTERS.CSV"
+    DBMS=CSV REPLACE;
+RUN;
+
+/* Summary across all quarters */
+PROC MEANS DATA=OUTPRVAP.CONSOLIDATED_FACT_ALL_QUARTERS N SUM;
+    VAR SUPP_DEL_COST;
+    CLASS QTR;
+    TITLE "All Quarters Consolidated Fact Table Summary";
+RUN;
+
+%MEND ALL_QUARTERS_FACT_TABLE;
+
+/* Uncomment to create the all-quarters table */
+/* %ALL_QUARTERS_FACT_TABLE; */
