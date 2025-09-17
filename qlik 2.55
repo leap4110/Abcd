@@ -1,0 +1,303 @@
+/*------------------------------------------------------------------------------------------------------------------------
+/*  PROVIDER QLIK APP - PROC SQL VERSION WITH FIXED PAYMENT KEYS
+/*
+/*  Converted from PROC SUMMARY to PROC SQL approach
+/*  Fixed PAYMENT_KEY to be unique per payment amount by including PARTICIPANT_KEY
+/* 
+-------------------------------------------------------------------------------------------------------------------------*/
+
+LIBNAME OUTBTD "\\prntxnas001\sasstorage\NDISMarketdata\Data\Business Tables\Payments BT\Payments Delivered\";
+LIBNAME OUTBTP "\\prntxnas001\sasstorage\NDISMarketdata\Data\Business Tables\Participants BT\";
+LIBNAME OUTPRVAP "\\prntxnas001\sasstorage\NDISMarketdata\Projects\Qlik\Provider App\Data Model Files\";
+
+/*------------------------------------------------------------------------------------------------------------------------
+1. Use Payments Delivered BT for each quarter for the Master Table - PROC SQL VERSION
+-------------------------------------------------------------------------------------------------------------------------*/
+
+%MACRO MASTER_TABLE_SQL (QTR);
+
+/* Create master table using PROC SQL with proper unique PAYMENT_KEY */
+PROC SQL;
+	CREATE TABLE OUTPRVAP.MASTER_TABLE_&QTR. AS
+	SELECT 
+		 QTR
+		,PMTRQSTPRVDRABN
+		,DELIVERY_ABN_STS
+		,SUPPCLASSCD
+		,SUPPCATCD
+		,SILINDICATOR
+		,SDAINDICATOR
+		,MGTTYPDESC_NEW
+		,PRSNWITHDSBLTYID
+		,SA3CD2021
+		,MMM
+		
+		/* Create unique PAYMENT_KEY that includes participant - this fixes the duplication issue */
+		,CATX('_', QTR, PMTRQSTPRVDRABN, SUPPCLASSCD, SUPPCATCD
+			 ,MGTTYPDESC_NEW, SA3CD2021, MMM, SILINDICATOR, SDAINDICATOR, PRSNWITHDSBLTYID) AS PAYMENT_KEY
+		
+		/* Create standard keys for dimensions */
+		,PRSNWITHDSBLTYID AS PARTICIPANT_KEY
+		,PMTRQSTPRVDRABN AS PROVIDER_KEY
+		
+		/* Sum payment amounts - now each row will have a unique payment key */
+		,SUM(SUPP_DEL_COST) AS SUPP_DEL_COST
+		
+	FROM OUTBTD.BT_PMTS_DELIVERED&QTR.
+	WHERE PMTRQSTPRVDRABN IS NOT NULL 
+		AND PMTRQSTPRVDRABN NOT IN ('', ' ') 
+		AND PMTRQSTPRVDRABN NOT IN ('DRCTE', 'EXCLS', 'ONLIN', 'REIMB', 'DSBLT', 'NOABN', 'OVRSE')
+		AND PMTRQSTPRVDRABN NOT CONTAINS ''
+	GROUP BY QTR, PMTRQSTPRVDRABN, DELIVERY_ABN_STS, SUPPCLASSCD, SUPPCATCD, SILINDICATOR
+			,SDAINDICATOR, MGTTYPDESC_NEW, PRSNWITHDSBLTYID, SA3CD2021, MMM;
+QUIT;
+
+%MEND MASTER_TABLE_SQL;
+
+/* Execute for current quarter */
+%MASTER_TABLE_SQL (_2425_Q4);
+
+/*------------------------------------------------------------------------------------------------------------------------
+2. Point in Time data macros (unchanged)
+-------------------------------------------------------------------------------------------------------------------------*/
+
+%MACRO DEFINELIB (ExtDate, LibName);
+	%* Define the macro variables for the month;
+	DATA _null_;
+	%* Set up the text for the macro variable;
+	EOFY  = INTNX('YEAR.7', &ExtDate.,0,'E');
+	FIN_YEAR = CAT(YEAR(EOFY)-1,"-", MOD(YEAR(EOFY),100)); 
+	FOLDER  = CAT(YEAR(&ExtDate.),"-",PUT(MONTH(&ExtDate.),Z2.)," ",STRIP(PUT(&ExtDate.,MONNAME.)));
+	%* Create the macro variables;
+	CALL SYMPUTX ("FIN_YEAR", STRIP(FIN_YEAR));
+	CALL SYMPUTX("FOLDER", STRIP(FOLDER));
+	RUN;
+	%PUT &=FIN_YEAR &=FOLDER;
+	%* Define libname for the month;
+	LIBNAME &LibName. CLEAR;
+	LIBNAME &LibName. "\\PRNTXNAS001\SASSTORAGE\SASDATA\NDISGROUPSASDATA\04 - NDIS MONTHLY DATASETS\&FIN_YEAR.\&FOLDER.\SAS datasets\authorised";
+%MEND DEFINELIB;
+
+%MACRO LAGLIB(ExtDate,LibName);
+	%DEFINELIB(&ExtDate., &LibName.);
+	%* Reference definelib library and create a separate library with a 3 month lag for payment datasets;
+	%LET LagDate = %SYSFUNC(INTNX(MONTH,&ExtDate.,+3,E));
+	%DEFINELIB(&LagDate., &LibName._Lag);
+%MEND LAGLIB;
+
+/*------------------------------------------------------------------------------------------------------------------------
+3. Point in Time data retrieval - PROC SQL VERSION
+-------------------------------------------------------------------------------------------------------------------------*/
+
+%MACRO RETRIEVE_PIT_SQL (PERIOD_STRT, PERIOD_END, QTR, QTR2);
+
+/* Load provider details using PROC SQL */
+PROC SQL;
+	CREATE TABLE OUTPRVAP.ALL_PRV_&QTR. AS  
+	SELECT 
+		 &QTR2. AS QTR
+		,ABN AS PROVIDER_KEY
+		,LEGALNM
+		,LEGALENTYTYPNM
+		,PRVDRSTS
+		,RGSTRTNSTSDESC
+		,NOTFORPROFITIND
+	FROM DB.DSS_PROVIDERS
+	WHERE ABNPrmryPrvdrInd = 1;
+QUIT;   
+
+/* Load participant details using PROC SQL */
+PROC SQL;
+	CREATE TABLE OUTPRVAP.ALL_PTC_&QTR. AS  
+	SELECT 
+		 QTR
+		,PRSNWITHDSBLTYID AS PARTICIPANT_KEY
+		,EVERELIGBLIND
+		,SA3CD2021
+		,CALD_STATUS AS CALDSTS
+		,FIRST_NATIONS_STATUS AS ATSISTS
+		,PRIMARY_DISABILITY
+		,AGE_GROUP_1 AS AGE_GROUP
+		,GENDER
+	FROM OUTBTP.bt_participants&QTR.
+	WHERE EverEligblInd = 1;
+QUIT; 
+		
+%MEND RETRIEVE_PIT_SQL;
+
+/* Execute PIT data retrieval */
+%LAGLIB ("01JUN2025"D,db); 
+%RETRIEVE_PIT_SQL ('01MAR2025'D, '30JUN2025'D, _2425_Q4, '2425_Q4');
+
+/*------------------------------------------------------------------------------------------------------------------------
+4. CREATE CONSOLIDATED FACT TABLE - PROC SQL VERSION (No Bridge Table Needed)
+-------------------------------------------------------------------------------------------------------------------------*/
+
+%MACRO CONSOLIDATED_FACT_TABLE_SQL (QTR);
+
+/* Create consolidated fact table by joining all data together using PROC SQL */
+PROC SQL;
+	CREATE TABLE CONSOLIDATED_FACT_&QTR. AS
+	SELECT 
+		/* Keys - now PAYMENT_KEY is truly unique per payment */
+		 MT.PAYMENT_KEY
+		,MT.PROVIDER_KEY
+		,MT.PARTICIPANT_KEY
+		
+		/* Payment dimension fields */
+		,MT.QTR
+		,MT.SUPPCLASSCD
+		,MT.SUPPCATCD
+		,MT.MGTTYPDESC_NEW
+		,MT.SA3CD2021 AS PAYMENT_SA3CD2021
+		,MT.MMM
+		,MT.SILINDICATOR
+		,MT.SDAINDICATOR
+		,MT.SUPP_DEL_COST
+		
+		/* Provider dimension fields */
+		,PRV.LEGALNM
+		,PRV.LEGALENTYTYPNM
+		,PRV.PRVDRSTS
+		,PRV.RGSTRTNSTSDESC
+		,PRV.NOTFORPROFITIND
+		
+		/* Participant dimension fields */
+		,PTC.EVERELIGBLIND
+		,PTC.CALDSTS
+		,PTC.ATSISTS
+		,PTC.PRIMARY_DISABILITY
+		,PTC.AGE_GROUP
+		,PTC.GENDER
+
+	FROM OUTPRVAP.MASTER_TABLE_&QTR. MT
+
+	/* Left join with provider dimension */
+	LEFT JOIN OUTPRVAP.ALL_PRV_&QTR. PRV
+		ON MT.PROVIDER_KEY = PRV.PROVIDER_KEY
+
+	/* Left join with participant dimension */  
+	LEFT JOIN OUTPRVAP.ALL_PTC_&QTR. PTC
+		ON MT.PARTICIPANT_KEY = PTC.PARTICIPANT_KEY;
+QUIT;
+
+/* Export the consolidated fact table */
+PROC EXPORT
+    DATA= CONSOLIDATED_FACT_&QTR.
+    OUTFILE= "\\prntxnas001\sasstorage\NDISMarketdata\Projects\Qlik\Provider App\Data Model Files\CONSOLIDATED_FACT_&QTR..CSV"
+    DBMS=CSV REPLACE;
+RUN;
+
+/* Validation report */
+PROC SQL;
+	TITLE "Consolidated Fact Table Validation - Quarter &QTR.";
+	SELECT 
+		 COUNT(*) AS Total_Records
+		,COUNT(DISTINCT PAYMENT_KEY) AS Unique_Payment_Keys
+		,COUNT(DISTINCT PROVIDER_KEY) AS Unique_Provider_Keys
+		,COUNT(DISTINCT PARTICIPANT_KEY) AS Unique_Participant_Keys
+		,SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2
+		,AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+		
+		/* Key validation checks */
+		,CASE 
+			WHEN COUNT(*) = COUNT(DISTINCT PAYMENT_KEY) THEN 'PASS: Payment keys are unique'
+			ELSE 'FAIL: Duplicate payment keys found'
+		END AS Payment_Key_Check
+		
+	FROM CONSOLIDATED_FACT_&QTR.;
+QUIT;
+
+/* Check for any duplicate payment keys */
+PROC SQL;
+	TITLE "Check for Duplicate Payment Keys";
+	SELECT 
+		 PAYMENT_KEY
+		,COUNT(*) AS Record_Count
+		,SUM(SUPP_DEL_COST) AS Total_Amount FORMAT=COMMA12.2
+	FROM CONSOLIDATED_FACT_&QTR.
+	GROUP BY PAYMENT_KEY
+	HAVING COUNT(*) > 1;
+QUIT;
+
+%MEND CONSOLIDATED_FACT_TABLE_SQL;
+
+/* Execute for current quarter */
+%CONSOLIDATED_FACT_TABLE_SQL (_2425_Q4);
+
+/*------------------------------------------------------------------------------------------------------------------------
+5. OPTIONAL: Create separate dimension tables if needed for Qlik star schema
+-------------------------------------------------------------------------------------------------------------------------*/
+
+%MACRO CREATE_DIMENSION_TABLES_SQL (QTR);
+
+/* Create Provider Dimension Table */
+PROC SQL;
+	CREATE TABLE DIM_PROVIDER_&QTR. AS
+	SELECT DISTINCT
+		 PROVIDER_KEY
+		,LEGALNM
+		,LEGALENTYTYPNM
+		,PRVDRSTS
+		,RGSTRTNSTSDESC
+		,NOTFORPROFITIND
+	FROM CONSOLIDATED_FACT_&QTR.
+	WHERE PROVIDER_KEY IS NOT NULL;
+QUIT;
+
+PROC EXPORT
+	DATA= DIM_PROVIDER_&QTR.
+	OUTFILE= "\\prntxnas001\sasstorage\NDISMarketdata\Projects\Qlik\Provider App\Data Model Files\DIM_PROVIDER_&QTR..CSV"
+	DBMS=CSV REPLACE;
+RUN;
+
+/* Create Participant Dimension Table */
+PROC SQL;
+	CREATE TABLE DIM_PARTICIPANT_&QTR. AS
+	SELECT DISTINCT
+		 PARTICIPANT_KEY
+		,EVERELIGBLIND
+		,CALDSTS
+		,ATSISTS
+		,PRIMARY_DISABILITY
+		,AGE_GROUP
+		,GENDER
+	FROM CONSOLIDATED_FACT_&QTR.
+	WHERE PARTICIPANT_KEY IS NOT NULL;
+QUIT;
+
+PROC EXPORT
+	DATA= DIM_PARTICIPANT_&QTR.
+	OUTFILE= "\\prntxnas001\sasstorage\NDISMarketdata\Projects\Qlik\Provider App\Data Model Files\DIM_PARTICIPANT_&QTR..CSV"
+	DBMS=CSV REPLACE;
+RUN;
+
+/* Create Fact Table with only keys and measures */
+PROC SQL;
+	CREATE TABLE FACT_PAYMENTS_&QTR. AS
+	SELECT 
+		 PAYMENT_KEY
+		,PROVIDER_KEY
+		,PARTICIPANT_KEY
+		,QTR
+		,SUPPCLASSCD
+		,SUPPCATCD
+		,MGTTYPDESC_NEW
+		,PAYMENT_SA3CD2021
+		,MMM
+		,SILINDICATOR
+		,SDAINDICATOR
+		,SUPP_DEL_COST
+	FROM CONSOLIDATED_FACT_&QTR.;
+QUIT;
+
+PROC EXPORT
+	DATA= FACT_PAYMENTS_&QTR.
+	OUTFILE= "\\prntxnas001\sasstorage\NDISMarketdata\Projects\Qlik\Provider App\Data Model Files\FACT_PAYMENTS_&QTR..CSV"
+	DBMS=CSV REPLACE;
+RUN;
+
+%MEND CREATE_DIMENSION_TABLES_SQL;
+
+/* Uncomment to create separate dimension tables */
+/* %CREATE_DIMENSION_TABLES_SQL (_2425_Q4); */
