@@ -1,0 +1,433 @@
+//=============================================================================
+//CRITICAL CHANGE: REPLACE BRIDGE + DIM_PAYMENT WITH SINGLE FACT TABLE
+//=============================================================================
+
+//Load Bridge table first (all quarters)
+TempBridge:
+LOAD
+    PAYMENT_KEY,
+    PROVIDER_KEY,
+    PARTICIPANT_KEY
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_BRIDGE__2223_Q3.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempBridge)
+LOAD
+    PAYMENT_KEY,
+    PROVIDER_KEY,
+    PARTICIPANT_KEY
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_BRIDGE__2223_Q4.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempBridge)
+LOAD
+    PAYMENT_KEY,
+    PROVIDER_KEY,
+    PARTICIPANT_KEY
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_BRIDGE__2324_Q1.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempBridge)
+LOAD
+    PAYMENT_KEY,
+    PROVIDER_KEY,
+    PARTICIPANT_KEY
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_BRIDGE__2324_Q2.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempBridge)
+LOAD
+    PAYMENT_KEY,
+    PROVIDER_KEY,
+    PARTICIPANT_KEY
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_BRIDGE__2324_Q3.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempBridge)
+LOAD
+    PAYMENT_KEY,
+    PROVIDER_KEY,
+    PARTICIPANT_KEY
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_BRIDGE__2324_Q4.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempBridge)
+LOAD
+    PAYMENT_KEY,
+    PROVIDER_KEY,
+    PARTICIPANT_KEY
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_BRIDGE__2425_Q1.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempBridge)
+LOAD
+    PAYMENT_KEY,
+    PROVIDER_KEY,
+    PARTICIPANT_KEY
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_BRIDGE__2425_Q2.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+//Load Payment data (all quarters)
+TempPayments:
+LOAD
+    PAYMENT_KEY,//MODIFIED QLIK CODE - ELIMINATE BRIDGE TABLE
+//Uses your existing uploaded files but creates a proper star schema
+
+//Keep your Provider and Participant dimensions exactly as they are
+Dim_Provider:
+LOAD
+    PROVIDER_KEY,
+    LEGALNM,
+    LEGALENTYTYPNM,
+    PRVDRSTS,
+    RGSTRTNSTSDESC,
+    NOTFORPROFITIND,
+    PROVIDER_KEY & ' - ' & LEGALNM AS ABN_LEGAL_NM   
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_DIM_PROVIDER__2425_Q2.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Dim_Participant:
+LOAD
+    PARTICIPANT_KEY,
+    CALDSTS,
+    ATSISTS,
+    NDISDSBLTYGRPNM,
+    AGE_GROUP, 
+    IF([AGE_GROUP] = '0-8', '2'
+    , IF([AGE_GROUP] = '9-17', '3'
+    , IF([AGE_GROUP] = '18-64', '4'
+    , IF([AGE_GROUP] = '65+', '5'
+    , IF([AGE_GROUP] = 'Missing', '6', '7'))))) AS AGE_GROUP2
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_DIM_PARTICIPANT__2425_Q2.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+//Keep all your lookup tables exactly as they are
+SA3_Lookup:
+LOAD
+    SA3_CODE_2021 as SA3CD2021,
+    SA3_NAME_2021,
+    STATE_CODE_2021,
+    STATE_NAME_2021 AS STATE_2021
+FROM [lib://MKA - Folder/1_BaseQVD/SA3_2021_AUST.csv]
+(txt, utf8, embedded labels, delimiter is ',', msq);
+
+SA3_Boundary:
+LOAD
+    ABS_SA3_2021_GDA94_T60_Nm.Name as SA3_NAME_2021,
+    ABS_SA3_2021_GDA94_T60_Nm.Area as SA3_AREA
+FROM [lib://AttachedFiles/ABS_SA3_2021_GDA94_T60_Nm.KML]
+(kml, Table is [ABS_SA3_2021_GDA94_T60_Nm/]);
+
+MMMGrouping: 
+LOAD
+    MMM,
+    IF(MMM = 1, 'Metropolitan', IF(MMM = 7 OR MMM = 6, 'Remote', 'Regional')) AS MMM2,
+    MMMGroup
+FROM [lib://AttachedFiles/MMM.xlsx]
+(ooxml, embedded labels, table is Sheet1);
+
+LOAD
+    SUPPCATCD,
+    SUPPCAT
+FROM [lib://AttachedFiles/SUPPCAT.csv]
+(txt, utf8, embedded labels, delimiter is ',', msq);
+
+LOAD
+    SUPPCLASSCD,
+    SUPPCLASS
+FROM [lib://AttachedFiles/SUPPCLASS.csv]
+(txt, utf8, embedded labels, delimiter is ',', msq);
+
+//=============================================================================
+//CRITICAL CHANGE: REPLACE BRIDGE + DIM_PAYMENT WITH SINGLE FACT TABLE
+//=============================================================================
+
+//CREATE FACT TABLE BY JOINING YOUR EXISTING BRIDGE AND PAYMENT TABLES
+FactPayments:
+LOAD
+    //Keys for joining to dimensions
+    B.PAYMENT_KEY,
+    B.PROVIDER_KEY,
+    B.PARTICIPANT_KEY,
+    
+    //Payment measures and attributes (from Dim_Payment)
+    P.QTR,
+    P.QTR2,
+    P.SUPPCLASSCD,
+    P.SUPPCATCD,
+    P.MGTTYPDESC_NEW,
+    P.SA3CD2021,
+    P.MMM,
+    P.SILINDICATOR,
+    P.SDAINDICATOR,
+    P.PYMTAMT
+;
+
+//Load Bridge table first (all quarters)
+TempBridge:
+LOAD
+    PAYMENT_KEY,
+    PROVIDER_KEY,
+    PARTICIPANT_KEY
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_BRIDGE__2223_Q3.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempBridge)
+LOAD
+    PAYMENT_KEY,
+    PROVIDER_KEY,
+    PARTICIPANT_KEY
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_BRIDGE__2223_Q4.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempBridge)
+LOAD
+    PAYMENT_KEY,
+    PROVIDER_KEY,
+    PARTICIPANT_KEY
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_BRIDGE__2324_Q1.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempBridge)
+LOAD
+    PAYMENT_KEY,
+    PROVIDER_KEY,
+    PARTICIPANT_KEY
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_BRIDGE__2324_Q2.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempBridge)
+LOAD
+    PAYMENT_KEY,
+    PROVIDER_KEY,
+    PARTICIPANT_KEY
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_BRIDGE__2324_Q3.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempBridge)
+LOAD
+    PAYMENT_KEY,
+    PROVIDER_KEY,
+    PARTICIPANT_KEY
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_BRIDGE__2324_Q4.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempBridge)
+LOAD
+    PAYMENT_KEY,
+    PROVIDER_KEY,
+    PARTICIPANT_KEY
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_BRIDGE__2425_Q1.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempBridge)
+LOAD
+    PAYMENT_KEY,
+    PROVIDER_KEY,
+    PARTICIPANT_KEY
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_BRIDGE__2425_Q2.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+//Load Payment data (all quarters)
+TempPayments:
+LOAD
+    PAYMENT_KEY,
+    QTR,
+    IF([QTR] = '2223_Q3', 'Mar 2023'
+    , IF([QTR] = '2223_Q4', 'Jun 2023'
+    , IF([QTR] = '2324_Q1', 'Sep 2023'
+    , IF([QTR] = '2324_Q2', 'Dec 2023'
+    , IF([QTR] = '2324_Q3', 'Mar 2024'
+    , IF([QTR] = '2324_Q4', 'Jun 2024'
+    , IF([QTR] = '2425_Q1', 'Sep 2024'
+    , IF([QTR] = '2425_Q2', 'Dec 2024'
+    )))))))) AS QTR2,
+    SUPPCLASSCD,
+    SUPPCATCD,
+    MGTTYPDESC_NEW,
+    SA3CD2021,
+    MMM,
+    SILINDICATOR,
+    SDAINDICATOR,
+    SUPP_DEL_COST AS PYMTAMT
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_DIM_PAYMENT__2223_Q3.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempPayments)
+LOAD
+    PAYMENT_KEY,
+    QTR,
+    IF([QTR] = '2223_Q3', 'Mar 2023'
+    , IF([QTR] = '2223_Q4', 'Jun 2023'
+    , IF([QTR] = '2324_Q1', 'Sep 2023'
+    , IF([QTR] = '2324_Q2', 'Dec 2023'
+    , IF([QTR] = '2324_Q3', 'Mar 2024'
+    , IF([QTR] = '2324_Q4', 'Jun 2024'
+    , IF([QTR] = '2425_Q1', 'Sep 2024'
+    , IF([QTR] = '2425_Q2', 'Dec 2024'
+    )))))))) AS QTR2,
+    SUPPCLASSCD,
+    SUPPCATCD,
+    MGTTYPDESC_NEW,
+    SA3CD2021,
+    MMM,
+    SILINDICATOR,
+    SDAINDICATOR,
+    SUPP_DEL_COST AS PYMTAMT
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_DIM_PAYMENT__2223_Q4.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempPayments)
+LOAD
+    PAYMENT_KEY,
+    QTR,
+    IF([QTR] = '2223_Q3', 'Mar 2023'
+    , IF([QTR] = '2223_Q4', 'Jun 2023'
+    , IF([QTR] = '2324_Q1', 'Sep 2023'
+    , IF([QTR] = '2324_Q2', 'Dec 2023'
+    , IF([QTR] = '2324_Q3', 'Mar 2024'
+    , IF([QTR] = '2324_Q4', 'Jun 2024'
+    , IF([QTR] = '2425_Q1', 'Sep 2024'
+    , IF([QTR] = '2425_Q2', 'Dec 2024'
+    )))))))) AS QTR2,
+    SUPPCLASSCD,
+    SUPPCATCD,
+    MGTTYPDESC_NEW,
+    SA3CD2021,
+    MMM,
+    SILINDICATOR,
+    SDAINDICATOR,
+    SUPP_DEL_COST AS PYMTAMT
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_DIM_PAYMENT__2324_Q1.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempPayments)
+LOAD
+    PAYMENT_KEY,
+    QTR,
+    IF([QTR] = '2223_Q3', 'Mar 2023'
+    , IF([QTR] = '2223_Q4', 'Jun 2023'
+    , IF([QTR] = '2324_Q1', 'Sep 2023'
+    , IF([QTR] = '2324_Q2', 'Dec 2023'
+    , IF([QTR] = '2324_Q3', 'Mar 2024'
+    , IF([QTR] = '2324_Q4', 'Jun 2024'
+    , IF([QTR] = '2425_Q1', 'Sep 2024'
+    , IF([QTR] = '2425_Q2', 'Dec 2024'
+    )))))))) AS QTR2,
+    SUPPCLASSCD,
+    SUPPCATCD,
+    MGTTYPDESC_NEW,
+    SA3CD2021,
+    MMM,
+    SILINDICATOR,
+    SDAINDICATOR,
+    SUPP_DEL_COST AS PYMTAMT
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_DIM_PAYMENT__2324_Q2.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempPayments)
+LOAD
+    PAYMENT_KEY,
+    QTR,
+    IF([QTR] = '2223_Q3', 'Mar 2023'
+    , IF([QTR] = '2223_Q4', 'Jun 2023'
+    , IF([QTR] = '2324_Q1', 'Sep 2023'
+    , IF([QTR] = '2324_Q2', 'Dec 2023'
+    , IF([QTR] = '2324_Q3', 'Mar 2024'
+    , IF([QTR] = '2324_Q4', 'Jun 2024'
+    , IF([QTR] = '2425_Q1', 'Sep 2024'
+    , IF([QTR] = '2425_Q2', 'Dec 2024'
+    )))))))) AS QTR2,
+    SUPPCLASSCD,
+    SUPPCATCD,
+    MGTTYPDESC_NEW,
+    SA3CD2021,
+    MMM,
+    SILINDICATOR,
+    SDAINDICATOR,
+    SUPP_DEL_COST AS PYMTAMT
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_DIM_PAYMENT__2324_Q3.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempPayments)
+LOAD
+    PAYMENT_KEY,
+    QTR,
+    IF([QTR] = '2223_Q3', 'Mar 2023'
+    , IF([QTR] = '2223_Q4', 'Jun 2023'
+    , IF([QTR] = '2324_Q1', 'Sep 2023'
+    , IF([QTR] = '2324_Q2', 'Dec 2023'
+    , IF([QTR] = '2324_Q3', 'Mar 2024'
+    , IF([QTR] = '2324_Q4', 'Jun 2024'
+    , IF([QTR] = '2425_Q1', 'Sep 2024'
+    , IF([QTR] = '2425_Q2', 'Dec 2024'
+    )))))))) AS QTR2,
+    SUPPCLASSCD,
+    SUPPCATCD,
+    MGTTYPDESC_NEW,
+    SA3CD2021,
+    MMM,
+    SILINDICATOR,
+    SDAINDICATOR,
+    SUPP_DEL_COST AS PYMTAMT
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_DIM_PAYMENT__2324_Q4.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempPayments)
+LOAD
+    PAYMENT_KEY,
+    QTR,
+    IF([QTR] = '2223_Q3', 'Mar 2023'
+    , IF([QTR] = '2223_Q4', 'Jun 2023'
+    , IF([QTR] = '2324_Q1', 'Sep 2023'
+    , IF([QTR] = '2324_Q2', 'Dec 2023'
+    , IF([QTR] = '2324_Q3', 'Mar 2024'
+    , IF([QTR] = '2324_Q4', 'Jun 2024'
+    , IF([QTR] = '2425_Q1', 'Sep 2024'
+    , IF([QTR] = '2425_Q2', 'Dec 2024'
+    )))))))) AS QTR2,
+    SUPPCLASSCD,
+    SUPPCATCD,
+    MGTTYPDESC_NEW,
+    SA3CD2021,
+    MMM,
+    SILINDICATOR,
+    SDAINDICATOR,
+    SUPP_DEL_COST AS PYMTAMT
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_DIM_PAYMENT__2425_Q1.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+Concatenate (TempPayments)
+LOAD
+    PAYMENT_KEY,
+    QTR,
+    IF([QTR] = '2223_Q3', 'Mar 2023'
+    , IF([QTR] = '2223_Q4', 'Jun 2023'
+    , IF([QTR] = '2324_Q1', 'Sep 2023'
+    , IF([QTR] = '2324_Q2', 'Dec 2023'
+    , IF([QTR] = '2324_Q3', 'Mar 2024'
+    , IF([QTR] = '2324_Q4', 'Jun 2024'
+    , IF([QTR] = '2425_Q1', 'Sep 2024'
+    , IF([QTR] = '2425_Q2', 'Dec 2024'
+    )))))))) AS QTR2,
+    SUPPCLASSCD,
+    SUPPCATCD,
+    MGTTYPDESC_NEW,
+    SA3CD2021,
+    MMM,
+    SILINDICATOR,
+    SDAINDICATOR,
+    SUPP_DEL_COST AS PYMTAMT
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_DIM_PAYMENT__2425_Q2.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+//Now create the final fact table by joining Bridge and Payments using proper Qlik syntax
+LEFT JOIN (TempBridge)
+LOAD * RESIDENT TempPayments;
+
+//Rename the joined table to FactPayments
+FactPayments:
+LOAD * RESIDENT TempBridge;
+
+//Clean up temporary tables
+DROP TABLES TempBridge, TempPayments;
