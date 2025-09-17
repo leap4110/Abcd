@@ -1,0 +1,448 @@
+/*------------------------------------------------------------------------------------------------------------------------
+/*  CONSOLIDATED FACT TABLE - PAYMENT ANALYSIS BY ALL FIELD PERMUTATIONS
+/*
+/*  Analyzes SUPP_DEL_COST across all dimensions in the consolidated fact table
+/*  Provides total dollar amounts by each field and key combinations
+/* 
+-------------------------------------------------------------------------------------------------------------------------*/
+
+%MACRO PAYMENT_ANALYSIS (QTR);
+
+TITLE "Payment Analysis for Quarter &QTR.";
+
+/*------------------------------------------------------------------------------------------------------------------------
+SINGLE FIELD ANALYSES - Total payments by each individual dimension
+-------------------------------------------------------------------------------------------------------------------------*/
+
+/* Payment Analysis - Basic Dimensions */
+PROC SQL;
+    TITLE2 "Total Payments by Quarter";
+    SELECT 
+        QTR,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY QTR
+    ORDER BY QTR;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Support Class";
+    SELECT 
+        SUPPCLASSCD,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY SUPPCLASSCD
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Support Category";
+    SELECT 
+        SUPPCATCD,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY SUPPCATCD
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Management Type";
+    SELECT 
+        MGTTYPDESC_NEW,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY MGTTYPDESC_NEW
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by SA3 (Geographic Area)";
+    SELECT 
+        PAYMENT_SA3CD2021,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY PAYMENT_SA3CD2021
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Month";
+    SELECT 
+        MMM,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY MMM
+    ORDER BY MMM;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by SIL Indicator";
+    SELECT 
+        SILINDICATOR,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY SILINDICATOR
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by SDA Indicator";
+    SELECT 
+        SDAINDICATOR,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY SDAINDICATOR
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+/* Provider Analysis */
+PROC SQL;
+    TITLE2 "Total Payments by Provider Legal Entity Type";
+    SELECT 
+        LEGALENTYTYPNM,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY LEGALENTYTYPNM
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Provider Status";
+    SELECT 
+        PRVDRSTS,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY PRVDRSTS
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Registration Status";
+    SELECT 
+        RGSTRTNSTSDESC,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY RGSTRTNSTSDESC
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Not-for-Profit Status";
+    SELECT 
+        NOTFORPROFITIND,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY NOTFORPROFITIND
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+/* Participant Analysis */
+PROC SQL;
+    TITLE2 "Total Payments by Gender";
+    SELECT 
+        GENDER,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY GENDER
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Age Group";
+    SELECT 
+        AGE_GROUP,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY AGE_GROUP
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Primary Disability";
+    SELECT 
+        PRIMARY_DISABILITY,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY PRIMARY_DISABILITY
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by CALD Status";
+    SELECT 
+        CALDSTS,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY CALDSTS
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by First Nations Status";
+    SELECT 
+        ATSISTS,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY ATSISTS
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Ever Eligible Blind Status";
+    SELECT 
+        EVERELIGBLIND,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY EVERELIGBLIND
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+/*------------------------------------------------------------------------------------------------------------------------
+TWO-FIELD COMBINATIONS - Key cross-tabulations
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    TITLE2 "Total Payments by Gender and Age Group";
+    SELECT 
+        GENDER,
+        AGE_GROUP,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY GENDER, AGE_GROUP
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Primary Disability and Age Group";
+    SELECT 
+        PRIMARY_DISABILITY,
+        AGE_GROUP,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY PRIMARY_DISABILITY, AGE_GROUP
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Support Class and Management Type";
+    SELECT 
+        SUPPCLASSCD,
+        MGTTYPDESC_NEW,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY SUPPCLASSCD, MGTTYPDESC_NEW
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Provider Status and Entity Type";
+    SELECT 
+        PRVDRSTS,
+        LEGALENTYTYPNM,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY PRVDRSTS, LEGALENTYTYPNM
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by CALD Status and First Nations Status";
+    SELECT 
+        CALDSTS,
+        ATSISTS,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY CALDSTS, ATSISTS
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by SIL and SDA Indicators";
+    SELECT 
+        SILINDICATOR,
+        SDAINDICATOR,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY SILINDICATOR, SDAINDICATOR
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+/*------------------------------------------------------------------------------------------------------------------------
+THREE-FIELD COMBINATIONS - Complex cross-tabulations
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    TITLE2 "Total Payments by Gender, Age Group, and Primary Disability";
+    SELECT 
+        GENDER,
+        AGE_GROUP,
+        PRIMARY_DISABILITY,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY GENDER, AGE_GROUP, PRIMARY_DISABILITY
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Support Class, Management Type, and Provider Status";
+    SELECT 
+        SUPPCLASSCD,
+        MGTTYPDESC_NEW,
+        PRVDRSTS,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY SUPPCLASSCD, MGTTYPDESC_NEW, PRVDRSTS
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Month, SIL Indicator, and SDA Indicator";
+    SELECT 
+        MMM,
+        SILINDICATOR,
+        SDAINDICATOR,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY MMM, SILINDICATOR, SDAINDICATOR
+    ORDER BY MMM, Total_Payment_Amount DESC;
+QUIT;
+
+/*------------------------------------------------------------------------------------------------------------------------
+TOP PERFORMERS - Highest payment amounts by key dimensions
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    TITLE2 "Top 10 SA3 Areas by Total Payment Amount";
+    SELECT 
+        PAYMENT_SA3CD2021,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY PAYMENT_SA3CD2021
+    ORDER BY Total_Payment_Amount DESC
+    LIMIT 10;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Top 10 Providers by Total Payment Amount";
+    SELECT 
+        PROVIDER_KEY,
+        LEGALNM,
+        LEGALENTYTYPNM,
+        PRVDRSTS,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY PROVIDER_KEY, LEGALNM, LEGALENTYTYPNM, PRVDRSTS
+    ORDER BY Total_Payment_Amount DESC
+    LIMIT 10;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Top 10 Support Categories by Total Payment Amount";
+    SELECT 
+        SUPPCATCD,
+        SUPPCLASSCD,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY SUPPCATCD, SUPPCLASSCD
+    ORDER BY Total_Payment_Amount DESC
+    LIMIT 10;
+QUIT;
+
+/*------------------------------------------------------------------------------------------------------------------------
+SUMMARY STATISTICS
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    TITLE2 "Overall Payment Summary";
+    SELECT 
+        COUNT(*) AS Total_Records,
+        COUNT(DISTINCT PROVIDER_KEY) AS Unique_Providers,
+        COUNT(DISTINCT PARTICIPANT_KEY) AS Unique_Participants,
+        COUNT(DISTINCT PAYMENT_KEY) AS Unique_Payment_Keys,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2,
+        MIN(SUPP_DEL_COST) AS Minimum_Payment FORMAT=COMMA12.2,
+        MAX(SUPP_DEL_COST) AS Maximum_Payment FORMAT=COMMA12.2,
+        STD(SUPP_DEL_COST) AS Payment_Std_Dev FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.;
+QUIT;
+
+%MEND PAYMENT_ANALYSIS;
+
+/* Execute the analysis for the current quarter */
+%PAYMENT_ANALYSIS (_2425_Q4);
+
+/* 
+For multiple quarters, uncomment and run:
+%PAYMENT_ANALYSIS (_2223_Q1);
+%PAYMENT_ANALYSIS (_2223_Q2);
+%PAYMENT_ANALYSIS (_2223_Q3);
+%PAYMENT_ANALYSIS (_2223_Q4);
+%PAYMENT_ANALYSIS (_2324_Q1);
+%PAYMENT_ANALYSIS (_2324_Q2);
+%PAYMENT_ANALYSIS (_2324_Q3);
+%PAYMENT_ANALYSIS (_2324_Q4);
+%PAYMENT_ANALYSIS (_2425_Q1);
+%PAYMENT_ANALYSIS (_2425_Q2);
+%PAYMENT_ANALYSIS (_2425_Q3);
+*/
