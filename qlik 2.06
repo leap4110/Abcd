@@ -1,0 +1,228 @@
+/*------------------------------------------------------------------------------------------------------------------------
+/*  PARTICIPANT DUPLICATION INVESTIGATION
+/*
+/*  Simple PROC SQL queries to investigate participant count discrepancies
+/*  Compares counts between consolidated fact table and source tables
+/* 
+-------------------------------------------------------------------------------------------------------------------------*/
+
+%MACRO INVESTIGATE_PARTICIPANTS (QTR);
+
+TITLE "Participant Investigation for Quarter &QTR.";
+
+/*------------------------------------------------------------------------------------------------------------------------
+1. Basic Counts - Compare different ways of counting participants
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    TITLE2 "Basic Participant Counts - Consolidated Fact Table";
+    SELECT 
+        COUNT(*) AS Total_Records_in_Fact_Table,
+        COUNT(DISTINCT PARTICIPANT_KEY) AS Unique_Participants_Fact_Table,
+        COUNT(PARTICIPANT_KEY) AS Non_Null_Participant_Keys,
+        COUNT(PARTICIPANT_KEY) - COUNT(DISTINCT PARTICIPANT_KEY) AS Duplicate_Participant_Records
+    FROM CONSOLIDATED_FACT_&QTR.;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Participant Counts - Original Master Table";
+    SELECT 
+        COUNT(*) AS Total_Records_in_Master_Table,
+        COUNT(DISTINCT PARTICIPANT_KEY) AS Unique_Participants_Master_Table,
+        COUNT(PARTICIPANT_KEY) AS Non_Null_Participant_Keys,
+        COUNT(PARTICIPANT_KEY) - COUNT(DISTINCT PARTICIPANT_KEY) AS Duplicate_Participant_Records
+    FROM OUTPRVAP.MASTER_TABLE_&QTR.;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Participant Counts - Participant Dimension Table";
+    SELECT 
+        COUNT(*) AS Total_Records_in_Participant_Dim,
+        COUNT(DISTINCT PARTICIPANT_KEY) AS Unique_Participants_Participant_Dim
+    FROM OUTPRVAP.ALL_PTC_&QTR.;
+QUIT;
+
+/*------------------------------------------------------------------------------------------------------------------------
+2. Check for NULL or Missing Participant Keys
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    TITLE2 "Check for Missing/Null Participant Keys";
+    SELECT 
+        COUNT(*) AS Total_Records,
+        SUM(CASE WHEN PARTICIPANT_KEY IS NULL THEN 1 ELSE 0 END) AS Null_Participant_Keys,
+        SUM(CASE WHEN PARTICIPANT_KEY = '' THEN 1 ELSE 0 END) AS Empty_Participant_Keys,
+        SUM(CASE WHEN PARTICIPANT_KEY = ' ' THEN 1 ELSE 0 END) AS Space_Participant_Keys,
+        SUM(CASE WHEN PARTICIPANT_KEY IS NOT NULL AND PARTICIPANT_KEY NOT IN ('', ' ') THEN 1 ELSE 0 END) AS Valid_Participant_Keys
+    FROM CONSOLIDATED_FACT_&QTR.;
+QUIT;
+
+/*------------------------------------------------------------------------------------------------------------------------
+3. Find Participants with Multiple Records - Show Top 10
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    TITLE2 "Top 10 Participants with Most Records";
+    SELECT 
+        PARTICIPANT_KEY,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payments FORMAT=COMMA15.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY PARTICIPANT_KEY
+    ORDER BY Record_Count DESC
+    LIMIT 10;
+QUIT;
+
+/*------------------------------------------------------------------------------------------------------------------------
+4. Check Distribution of Records per Participant
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    TITLE2 "Distribution of Records per Participant";
+    SELECT 
+        Records_Per_Participant,
+        COUNT(*) AS Number_of_Participants,
+        SUM(Records_Per_Participant * COUNT(*)) AS Total_Records_Accounted
+    FROM (
+        SELECT 
+            PARTICIPANT_KEY,
+            COUNT(*) AS Records_Per_Participant
+        FROM CONSOLIDATED_FACT_&QTR.
+        GROUP BY PARTICIPANT_KEY
+    )
+    GROUP BY Records_Per_Participant
+    ORDER BY Records_Per_Participant;
+QUIT;
+
+/*------------------------------------------------------------------------------------------------------------------------
+5. Check for Differences in Join Logic - Compare before and after joins
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    TITLE2 "Participant Counts Before and After Joins";
+    SELECT 
+        'Master Table' AS Source,
+        COUNT(DISTINCT PARTICIPANT_KEY) AS Unique_Participants
+    FROM OUTPRVAP.MASTER_TABLE_&QTR.
+    
+    UNION ALL
+    
+    SELECT 
+        'After Provider Join' AS Source,
+        COUNT(DISTINCT MT.PARTICIPANT_KEY) AS Unique_Participants
+    FROM OUTPRVAP.MASTER_TABLE_&QTR. MT
+    LEFT JOIN OUTPRVAP.ALL_PRV_&QTR. PRV
+        ON MT.PROVIDER_KEY = PRV.PROVIDER_KEY
+    
+    UNION ALL
+    
+    SELECT 
+        'After Both Joins (Consolidated)' AS Source,
+        COUNT(DISTINCT MT.PARTICIPANT_KEY) AS Unique_Participants
+    FROM OUTPRVAP.MASTER_TABLE_&QTR. MT
+    LEFT JOIN OUTPRVAP.ALL_PRV_&QTR. PRV
+        ON MT.PROVIDER_KEY = PRV.PROVIDER_KEY
+    LEFT JOIN OUTPRVAP.ALL_PTC_&QTR. PTC
+        ON MT.PARTICIPANT_KEY = PTC.PARTICIPANT_KEY;
+QUIT;
+
+/*------------------------------------------------------------------------------------------------------------------------
+6. Check for Cartesian Product Issues - Provider Dimension
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    TITLE2 "Check for Multiple Provider Records per Provider Key";
+    SELECT 
+        PROVIDER_KEY,
+        COUNT(*) AS Provider_Record_Count
+    FROM OUTPRVAP.ALL_PRV_&QTR.
+    GROUP BY PROVIDER_KEY
+    HAVING COUNT(*) > 1
+    ORDER BY Provider_Record_Count DESC;
+QUIT;
+
+/*------------------------------------------------------------------------------------------------------------------------
+7. Check for Cartesian Product Issues - Participant Dimension
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    TITLE2 "Check for Multiple Participant Records per Participant Key";
+    SELECT 
+        PARTICIPANT_KEY,
+        COUNT(*) AS Participant_Record_Count
+    FROM OUTPRVAP.ALL_PTC_&QTR.
+    GROUP BY PARTICIPANT_KEY
+    HAVING COUNT(*) > 1
+    ORDER BY Participant_Record_Count DESC;
+QUIT;
+
+/*------------------------------------------------------------------------------------------------------------------------
+8. Sample Records Investigation - Show detailed records for a participant with many records
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    TITLE2 "Sample Records for Participant with Most Records";
+    SELECT *
+    FROM CONSOLIDATED_FACT_&QTR.
+    WHERE PARTICIPANT_KEY = (
+        SELECT PARTICIPANT_KEY
+        FROM CONSOLIDATED_FACT_&QTR.
+        GROUP BY PARTICIPANT_KEY
+        ORDER BY COUNT(*) DESC
+        LIMIT 1
+    )
+    ORDER BY PAYMENT_KEY;
+QUIT;
+
+/*------------------------------------------------------------------------------------------------------------------------
+9. Check Record Counts by Key Combinations
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    TITLE2 "Record Counts by Payment Key";
+    SELECT 
+        'Payment Keys' AS Key_Type,
+        COUNT(*) AS Total_Records,
+        COUNT(DISTINCT PAYMENT_KEY) AS Unique_Keys,
+        COUNT(*) - COUNT(DISTINCT PAYMENT_KEY) AS Duplicate_Records
+    FROM CONSOLIDATED_FACT_&QTR.
+    
+    UNION ALL
+    
+    SELECT 
+        'Provider Keys' AS Key_Type,
+        COUNT(*) AS Total_Records,
+        COUNT(DISTINCT PROVIDER_KEY) AS Unique_Keys,
+        COUNT(*) - COUNT(DISTINCT PROVIDER_KEY) AS Duplicate_Records
+    FROM CONSOLIDATED_FACT_&QTR.
+    
+    UNION ALL
+    
+    SELECT 
+        'Participant Keys' AS Key_Type,
+        COUNT(*) AS Total_Records,
+        COUNT(DISTINCT PARTICIPANT_KEY) AS Unique_Keys,
+        COUNT(*) - COUNT(DISTINCT PARTICIPANT_KEY) AS Duplicate_Records
+    FROM CONSOLIDATED_FACT_&QTR.;
+QUIT;
+
+/*------------------------------------------------------------------------------------------------------------------------
+10. Cross-check with Original Business Table
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    TITLE2 "Compare with Original Payments Business Table";
+    SELECT 
+        COUNT(*) AS Total_Records_BT,
+        COUNT(DISTINCT PRSNWITHDSBLTYID) AS Unique_Participants_BT
+    FROM OUTBTD.BT_PMTS_DELIVERED&QTR.
+    WHERE PMTRQSTPRVDRABN IS NOT NULL 
+        AND PMTRQSTPRVDRABN NOT IN ('', ' ') 
+        AND PMTRQSTPRVDRABN NOT IN ('DRCTE', 'EXCLS', 'ONLIN', 'REIMB', 'DSBLT', 'NOABN', 'OVRSE')
+        AND PMTRQSTPRVDRABN NOT CONTAINS '';
+QUIT;
+
+%MEND INVESTIGATE_PARTICIPANTS;
+
+/* Execute the investigation */
+%INVESTIGATE_PARTICIPANTS (_2425_Q4);
