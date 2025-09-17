@@ -1,0 +1,781 @@
+/*------------------------------------------------------------------------------------------------------------------------
+TWO-FIELD COMBINATIONS - Key cross-tabulations
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    CREATE TABLE TEMP_GENDER_AGE AS
+    SELECT 
+        'By Gender and Age Group' AS Analysis_Type,
+        GENDER AS Dimension1,
+        AGE_GROUP AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY GENDER, AGE_GROUP
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_GENDER_AGE;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_DISABILITY_AGE AS
+    SELECT 
+        'By Primary Disability and Age Group' AS Analysis_Type,
+        PRIMARY_DISABILITY AS Dimension1,
+        AGE_GROUP AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY PRIMARY_DISABILITY, AGE_GROUP
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_DISABILITY_AGE;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_SUPPCLASS_MGT AS
+    SELECT 
+        'By Support Class and Management Type' AS Analysis_Type,
+        SUPPCLASSCD AS Dimension1,
+        MGTTYPDESC_NEW AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY SUPPCLASSCD, MGTTYPDESC_NEW
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_SUPPCLASS_MGT;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_PRVDR_ENTITY AS
+    SELECT 
+        'By Provider Status and Entity Type' AS Analysis_Type,
+        PRVDRSTS AS Dimension1,
+        LEGALENTYTYPNM AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY PRVDRSTS, LEGALENTYTYPNM
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_PRVDR_ENTITY;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_CALD_ATSI AS
+    SELECT 
+        'By CALD Status and First Nations Status' AS Analysis_Type,
+        CALDSTS AS Dimension1,
+        ATSISTS AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY CALDSTS, ATSISTS
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_CALD_ATSI;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_SIL_SDA AS
+    SELECT 
+        'By SIL and SDA Indicators' AS Analysis_Type,
+        SILINDICATOR AS Dimension1,
+        SDAINDICATOR AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY SILINDICATOR, SDAINDICATOR
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_SIL_SDA;
+RUN;
+
+/*------------------------------------------------------------------------------------------------------------------------
+THREE-FIELD COMBINATIONS - Complex cross-tabulations
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    CREATE TABLE TEMP_GENDER_AGE_DISABILITY AS
+    SELECT 
+        'By Gender, Age Group, and Primary Disability' AS Analysis_Type,
+        GENDER AS Dimension1,
+        AGE_GROUP AS Dimension2,
+        PRIMARY_DISABILITY AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY GENDER, AGE_GROUP, PRIMARY_DISABILITY
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_GENDER_AGE_DISABILITY;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_SUPP_MGT_PRVDR AS
+    SELECT 
+        'By Support Class, Management Type, and Provider Status' AS Analysis_Type,
+        SUPPCLASSCD AS Dimension1,
+        MGTTYPDESC_NEW AS Dimension2,
+        PRVDRSTS AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY SUPPCLASSCD, MGTTYPDESC_NEW, PRVDRSTS
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_SUPP_MGT_PRVDR;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_MONTH_SIL_SDA AS
+    SELECT 
+        'By Month, SIL Indicator, and SDA Indicator' AS Analysis_Type,
+        MMM AS Dimension1,
+        SILINDICATOR AS Dimension2,
+        SDAINDICATOR AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY MMM, SILINDICATOR, SDAINDICATOR
+    ORDER BY MMM, Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_MONTH_SIL_SDA;
+RUN;
+
+/*------------------------------------------------------------------------------------------------------------------------
+TOP PERFORMERS - Highest payment amounts by key dimensions
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    CREATE TABLE TEMP_TOP_SA3 AS
+    SELECT 
+        'Top 10 SA3 Areas by Total Payment Amount' AS Analysis_Type,
+        PAYMENT_SA3CD2021 AS Dimension1,
+        '' AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY PAYMENT_SA3CD2021
+    ORDER BY Total_Payment_Amount DESC
+    LIMIT 10;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_TOP_SA3;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_TOP_PROVIDERS AS
+    SELECT 
+        'Top 10 Providers by Total Payment Amount' AS Analysis_Type,
+        CATX(' - ', PROVIDER_KEY, LEGALNM) AS Dimension1,
+        LEGALENTYTYPNM AS Dimension2,
+        PRVDRSTS AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY PROVIDER_KEY, LEGALNM, LEGALENTYTYPNM, PRVDRSTS
+    ORDER BY Total_Payment_Amount DESC
+    LIMIT 10;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_TOP_PROVIDERS;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_TOP_SUPPCAT AS
+    SELECT 
+        'Top 10 Support Categories by Total Payment Amount' AS Analysis_Type,
+        SUPPCATCD AS Dimension1,
+        SUPPCLASSCD AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST/*------------------------------------------------------------------------------------------------------------------------
+/*  CONSOLIDATED FACT TABLE - PAYMENT ANALYSIS BY ALL FIELD PERMUTATIONS
+/*
+/*  Analyzes SUPP_DEL_COST across all dimensions in the consolidated fact table
+/*  Outputs all results to a single Excel spreadsheet
+/* 
+-------------------------------------------------------------------------------------------------------------------------*/
+
+%MACRO PAYMENT_ANALYSIS (QTR);
+
+/* Create a temporary dataset to store all analysis results */
+DATA PAYMENT_ANALYSIS_RESULTS;
+    LENGTH Analysis_Type $50 Dimension1 $100 Dimension2 $100 Dimension3 $100;
+    STOP; /* Creates empty dataset with structure */
+RUN;
+
+/*------------------------------------------------------------------------------------------------------------------------
+SINGLE FIELD ANALYSES - Total payments by each individual dimension
+-------------------------------------------------------------------------------------------------------------------------*/
+
+/* Payment Analysis - Basic Dimensions */
+PROC SQL;
+    CREATE TABLE TEMP_QTR AS
+    SELECT 
+        'By Quarter' AS Analysis_Type,
+        QTR AS Dimension1,
+        '' AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY QTR
+    ORDER BY QTR;
+QUIT;
+
+/* Append to results dataset */
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_QTR;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_SUPPCLASS AS
+    SELECT 
+        'By Support Class' AS Analysis_Type,
+        SUPPCLASSCD AS Dimension1,
+        '' AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY SUPPCLASSCD
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_SUPPCLASS;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_SUPPCAT AS
+    SELECT 
+        'By Support Category' AS Analysis_Type,
+        SUPPCATCD AS Dimension1,
+        '' AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY SUPPCATCD
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_SUPPCAT;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_MGTTYPE AS
+    SELECT 
+        'By Management Type' AS Analysis_Type,
+        MGTTYPDESC_NEW AS Dimension1,
+        '' AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY MGTTYPDESC_NEW
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_MGTTYPE;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_SA3 AS
+    SELECT 
+        'By SA3 Geographic Area' AS Analysis_Type,
+        PAYMENT_SA3CD2021 AS Dimension1,
+        '' AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY PAYMENT_SA3CD2021
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_SA3;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_MONTH AS
+    SELECT 
+        'By Month' AS Analysis_Type,
+        MMM AS Dimension1,
+        '' AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY MMM
+    ORDER BY MMM;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_MONTH;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_SIL AS
+    SELECT 
+        'By SIL Indicator' AS Analysis_Type,
+        SILINDICATOR AS Dimension1,
+        '' AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY SILINDICATOR
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_SIL;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_SDA AS
+    SELECT 
+        'By SDA Indicator' AS Analysis_Type,
+        SDAINDICATOR AS Dimension1,
+        '' AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY SDAINDICATOR
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_SDA;
+RUN;
+
+/* Provider Analysis */
+PROC SQL;
+    CREATE TABLE TEMP_ENTITYTYPE AS
+    SELECT 
+        'By Provider Legal Entity Type' AS Analysis_Type,
+        LEGALENTYTYPNM AS Dimension1,
+        '' AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY LEGALENTYTYPNM
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_ENTITYTYPE;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_PRVDRSTS AS
+    SELECT 
+        'By Provider Status' AS Analysis_Type,
+        PRVDRSTS AS Dimension1,
+        '' AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY PRVDRSTS
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_PRVDRSTS;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_REGSTS AS
+    SELECT 
+        'By Registration Status' AS Analysis_Type,
+        RGSTRTNSTSDESC AS Dimension1,
+        '' AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY RGSTRTNSTSDESC
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_REGSTS;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_NFP AS
+    SELECT 
+        'By Not-for-Profit Status' AS Analysis_Type,
+        NOTFORPROFITIND AS Dimension1,
+        '' AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY NOTFORPROFITIND
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_NFP;
+RUN;
+
+/* Participant Analysis */
+PROC SQL;
+    CREATE TABLE TEMP_GENDER AS
+    SELECT 
+        'By Gender' AS Analysis_Type,
+        GENDER AS Dimension1,
+        '' AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY GENDER
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_GENDER;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_AGE AS
+    SELECT 
+        'By Age Group' AS Analysis_Type,
+        AGE_GROUP AS Dimension1,
+        '' AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY AGE_GROUP
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_AGE;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_DISABILITY AS
+    SELECT 
+        'By Primary Disability' AS Analysis_Type,
+        PRIMARY_DISABILITY AS Dimension1,
+        '' AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY PRIMARY_DISABILITY
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_DISABILITY;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_CALD AS
+    SELECT 
+        'By CALD Status' AS Analysis_Type,
+        CALDSTS AS Dimension1,
+        '' AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY CALDSTS
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_CALD;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_ATSI AS
+    SELECT 
+        'By First Nations Status' AS Analysis_Type,
+        ATSISTS AS Dimension1,
+        '' AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY ATSISTS
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_ATSI;
+RUN;
+
+PROC SQL;
+    CREATE TABLE TEMP_BLIND AS
+    SELECT 
+        'By Ever Eligible Blind Status' AS Analysis_Type,
+        EVERELIGBLIND AS Dimension1,
+        '' AS Dimension2,
+        '' AS Dimension3,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY EVERELIGBLIND
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+DATA PAYMENT_ANALYSIS_RESULTS;
+    SET PAYMENT_ANALYSIS_RESULTS TEMP_BLIND;
+RUN;
+
+/*------------------------------------------------------------------------------------------------------------------------
+TWO-FIELD COMBINATIONS - Key cross-tabulations
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    TITLE2 "Total Payments by Gender and Age Group";
+    SELECT 
+        GENDER,
+        AGE_GROUP,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY GENDER, AGE_GROUP
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Primary Disability and Age Group";
+    SELECT 
+        PRIMARY_DISABILITY,
+        AGE_GROUP,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY PRIMARY_DISABILITY, AGE_GROUP
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Support Class and Management Type";
+    SELECT 
+        SUPPCLASSCD,
+        MGTTYPDESC_NEW,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY SUPPCLASSCD, MGTTYPDESC_NEW
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Provider Status and Entity Type";
+    SELECT 
+        PRVDRSTS,
+        LEGALENTYTYPNM,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY PRVDRSTS, LEGALENTYTYPNM
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by CALD Status and First Nations Status";
+    SELECT 
+        CALDSTS,
+        ATSISTS,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY CALDSTS, ATSISTS
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by SIL and SDA Indicators";
+    SELECT 
+        SILINDICATOR,
+        SDAINDICATOR,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY SILINDICATOR, SDAINDICATOR
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+/*------------------------------------------------------------------------------------------------------------------------
+THREE-FIELD COMBINATIONS - Complex cross-tabulations
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    TITLE2 "Total Payments by Gender, Age Group, and Primary Disability";
+    SELECT 
+        GENDER,
+        AGE_GROUP,
+        PRIMARY_DISABILITY,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY GENDER, AGE_GROUP, PRIMARY_DISABILITY
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Support Class, Management Type, and Provider Status";
+    SELECT 
+        SUPPCLASSCD,
+        MGTTYPDESC_NEW,
+        PRVDRSTS,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY SUPPCLASSCD, MGTTYPDESC_NEW, PRVDRSTS
+    ORDER BY Total_Payment_Amount DESC;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Total Payments by Month, SIL Indicator, and SDA Indicator";
+    SELECT 
+        MMM,
+        SILINDICATOR,
+        SDAINDICATOR,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY MMM, SILINDICATOR, SDAINDICATOR
+    ORDER BY MMM, Total_Payment_Amount DESC;
+QUIT;
+
+/*------------------------------------------------------------------------------------------------------------------------
+TOP PERFORMERS - Highest payment amounts by key dimensions
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    TITLE2 "Top 10 SA3 Areas by Total Payment Amount";
+    SELECT 
+        PAYMENT_SA3CD2021,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY PAYMENT_SA3CD2021
+    ORDER BY Total_Payment_Amount DESC
+    LIMIT 10;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Top 10 Providers by Total Payment Amount";
+    SELECT 
+        PROVIDER_KEY,
+        LEGALNM,
+        LEGALENTYTYPNM,
+        PRVDRSTS,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY PROVIDER_KEY, LEGALNM, LEGALENTYTYPNM, PRVDRSTS
+    ORDER BY Total_Payment_Amount DESC
+    LIMIT 10;
+QUIT;
+
+PROC SQL;
+    TITLE2 "Top 10 Support Categories by Total Payment Amount";
+    SELECT 
+        SUPPCATCD,
+        SUPPCLASSCD,
+        COUNT(*) AS Record_Count,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.
+    GROUP BY SUPPCATCD, SUPPCLASSCD
+    ORDER BY Total_Payment_Amount DESC
+    LIMIT 10;
+QUIT;
+
+/*------------------------------------------------------------------------------------------------------------------------
+SUMMARY STATISTICS
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    TITLE2 "Overall Payment Summary";
+    SELECT 
+        COUNT(*) AS Total_Records,
+        COUNT(DISTINCT PROVIDER_KEY) AS Unique_Providers,
+        COUNT(DISTINCT PARTICIPANT_KEY) AS Unique_Participants,
+        COUNT(DISTINCT PAYMENT_KEY) AS Unique_Payment_Keys,
+        SUM(SUPP_DEL_COST) AS Total_Payment_Amount FORMAT=COMMA15.2,
+        AVG(SUPP_DEL_COST) AS Average_Payment FORMAT=COMMA12.2,
+        MIN(SUPP_DEL_COST) AS Minimum_Payment FORMAT=COMMA12.2,
+        MAX(SUPP_DEL_COST) AS Maximum_Payment FORMAT=COMMA12.2,
+        STD(SUPP_DEL_COST) AS Payment_Std_Dev FORMAT=COMMA12.2
+    FROM CONSOLIDATED_FACT_&QTR.;
+QUIT;
+
+%MEND PAYMENT_ANALYSIS;
+
+/* Execute the analysis for the current quarter */
+%PAYMENT_ANALYSIS (_2425_Q4);
+
+/* 
+For multiple quarters, uncomment and run:
+%PAYMENT_ANALYSIS (_2223_Q1);
+%PAYMENT_ANALYSIS (_2223_Q2);
+%PAYMENT_ANALYSIS (_2223_Q3);
+%PAYMENT_ANALYSIS (_2223_Q4);
+%PAYMENT_ANALYSIS (_2324_Q1);
+%PAYMENT_ANALYSIS (_2324_Q2);
+%PAYMENT_ANALYSIS (_2324_Q3);
+%PAYMENT_ANALYSIS (_2324_Q4);
+%PAYMENT_ANALYSIS (_2425_Q1);
+%PAYMENT_ANALYSIS (_2425_Q2);
+%PAYMENT_ANALYSIS (_2425_Q3);
+*/
