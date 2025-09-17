@@ -1,0 +1,188 @@
+/*------------------------------------------------------------------------------------------------------------------------
+/*  STAR SCHEMA - FACT AND DIMENSION TABLES
+/*
+/*  Creates a proper star schema with separate fact and dimension tables
+/*  Eliminates file size issues and duplication problems
+/* 
+-------------------------------------------------------------------------------------------------------------------------*/
+
+%MACRO CREATE_STAR_SCHEMA (QTR);
+
+/*------------------------------------------------------------------------------------------------------------------------
+1. FACT TABLE - Payment transactions with keys and measures only
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    CREATE TABLE FACT_PAYMENTS_&QTR. AS
+    SELECT 
+        /* Keys for joining to dimensions */
+        PAYMENT_KEY,
+        PROVIDER_KEY,
+        PARTICIPANT_KEY,
+        
+        /* Measures - only facts and numeric values */
+        SUPP_DEL_COST,
+        QTR,
+        MMM,
+        
+        /* Payment-specific attributes that don't belong in other dimensions */
+        SUPPCLASSCD,
+        SUPPCATCD,
+        MGTTYPDESC_NEW,
+        PAYMENT_SA3CD2021,
+        SILINDICATOR,
+        SDAINDICATOR
+        
+    FROM CONSOLIDATED_FACT_&QTR.;
+QUIT;
+
+/* Export Fact Table */
+PROC EXPORT
+    DATA= FACT_PAYMENTS_&QTR.
+    OUTFILE= "\\prntxnas001\sasstorage\NDISMarketdata\Projects\Qlik\Provider App\Data Model Files\FACT_PAYMENTS_&QTR..CSV"
+    DBMS=CSV REPLACE;
+RUN;
+
+/*------------------------------------------------------------------------------------------------------------------------
+2. PROVIDER DIMENSION - One record per provider
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    CREATE TABLE DIM_PROVIDER_&QTR. AS
+    SELECT DISTINCT
+        PROVIDER_KEY,
+        LEGALNM,
+        LEGALENTYTYPNM,
+        PRVDRSTS,
+        RGSTRTNSTSDESC,
+        NOTFORPROFITIND
+    FROM CONSOLIDATED_FACT_&QTR.
+    WHERE PROVIDER_KEY IS NOT NULL;
+QUIT;
+
+/* Export Provider Dimension */
+PROC EXPORT
+    DATA= DIM_PROVIDER_&QTR.
+    OUTFILE= "\\prntxnas001\sasstorage\NDISMarketdata\Projects\Qlik\Provider App\Data Model Files\DIM_PROVIDER_&QTR..CSV"
+    DBMS=CSV REPLACE;
+RUN;
+
+/*------------------------------------------------------------------------------------------------------------------------
+3. PARTICIPANT DIMENSION - One record per participant
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    CREATE TABLE DIM_PARTICIPANT_&QTR. AS
+    SELECT DISTINCT
+        PARTICIPANT_KEY,
+        EVERELIGBLIND,
+        CALDSTS,
+        ATSISTS,
+        PRIMARY_DISABILITY,
+        AGE_GROUP,
+        GENDER
+    FROM CONSOLIDATED_FACT_&QTR.
+    WHERE PARTICIPANT_KEY IS NOT NULL;
+QUIT;
+
+/* Export Participant Dimension */
+PROC EXPORT
+    DATA= DIM_PARTICIPANT_&QTR.
+    OUTFILE= "\\prntxnas001\sasstorage\NDISMarketdata\Projects\Qlik\Provider App\Data Model Files\DIM_PARTICIPANT_&QTR..CSV"
+    DBMS=CSV REPLACE;
+RUN;
+
+/*------------------------------------------------------------------------------------------------------------------------
+4. PAYMENT DIMENSION - One record per unique payment combination
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    CREATE TABLE DIM_PAYMENT_&QTR. AS
+    SELECT DISTINCT
+        PAYMENT_KEY,
+        QTR,
+        SUPPCLASSCD,
+        SUPPCATCD,
+        MGTTYPDESC_NEW,
+        PAYMENT_SA3CD2021,
+        MMM,
+        SILINDICATOR,
+        SDAINDICATOR
+    FROM CONSOLIDATED_FACT_&QTR.
+    WHERE PAYMENT_KEY IS NOT NULL;
+QUIT;
+
+/* Export Payment Dimension */
+PROC EXPORT
+    DATA= DIM_PAYMENT_&QTR.
+    OUTFILE= "\\prntxnas001\sasstorage\NDISMarketdata\Projects\Qlik\Provider App\Data Model Files\DIM_PAYMENT_&QTR..CSV"
+    DBMS=CSV REPLACE;
+RUN;
+
+/*------------------------------------------------------------------------------------------------------------------------
+5. SUMMARY REPORT - Show record counts for validation
+-------------------------------------------------------------------------------------------------------------------------*/
+
+PROC SQL;
+    SELECT 
+        'Fact Table' AS Table_Name,
+        COUNT(*) AS Record_Count,
+        COUNT(DISTINCT PAYMENT_KEY) AS Unique_Payment_Keys,
+        COUNT(DISTINCT PROVIDER_KEY) AS Unique_Provider_Keys,
+        COUNT(DISTINCT PARTICIPANT_KEY) AS Unique_Participant_Keys,
+        SUM(SUPP_DEL_COST) AS Total_Payments FORMAT=COMMA15.2
+    FROM FACT_PAYMENTS_&QTR.
+    
+    UNION ALL
+    
+    SELECT 
+        'Provider Dimension' AS Table_Name,
+        COUNT(*) AS Record_Count,
+        . AS Unique_Payment_Keys,
+        COUNT(DISTINCT PROVIDER_KEY) AS Unique_Provider_Keys,
+        . AS Unique_Participant_Keys,
+        . AS Total_Payments
+    FROM DIM_PROVIDER_&QTR.
+    
+    UNION ALL
+    
+    SELECT 
+        'Participant Dimension' AS Table_Name,
+        COUNT(*) AS Record_Count,
+        . AS Unique_Payment_Keys,
+        . AS Unique_Provider_Keys,
+        COUNT(DISTINCT PARTICIPANT_KEY) AS Unique_Participant_Keys,
+        . AS Total_Payments
+    FROM DIM_PARTICIPANT_&QTR.
+    
+    UNION ALL
+    
+    SELECT 
+        'Payment Dimension' AS Table_Name,
+        COUNT(*) AS Record_Count,
+        COUNT(DISTINCT PAYMENT_KEY) AS Unique_Payment_Keys,
+        . AS Unique_Provider_Keys,
+        . AS Unique_Participant_Keys,
+        . AS Total_Payments
+    FROM DIM_PAYMENT_&QTR.;
+QUIT;
+
+%MEND CREATE_STAR_SCHEMA;
+
+/* Execute for current quarter */
+%CREATE_STAR_SCHEMA (_2425_Q4);
+
+/*
+For multiple quarters:
+%CREATE_STAR_SCHEMA (_2223_Q1);
+%CREATE_STAR_SCHEMA (_2223_Q2);
+%CREATE_STAR_SCHEMA (_2223_Q3);
+%CREATE_STAR_SCHEMA (_2223_Q4);
+%CREATE_STAR_SCHEMA (_2324_Q1);
+%CREATE_STAR_SCHEMA (_2324_Q2);
+%CREATE_STAR_SCHEMA (_2324_Q3);
+%CREATE_STAR_SCHEMA (_2324_Q4);
+%CREATE_STAR_SCHEMA (_2425_Q1);
+%CREATE_STAR_SCHEMA (_2425_Q2);
+%CREATE_STAR_SCHEMA (_2425_Q3);
+*/
