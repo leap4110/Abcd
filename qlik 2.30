@@ -1,0 +1,54 @@
+//Create the consolidated fact table by joining everything to the bridge
+FactPayments:
+LOAD
+    Bridge.PAYMENT_KEY,
+    Bridge.PROVIDER_KEY, 
+    Bridge.PARTICIPANT_KEY
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_BRIDGE__2425_Q2.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+//Join payment data
+LEFT JOIN (FactPayments)
+LOAD
+    PAYMENT_KEY,
+    QTR,
+    IF([QTR] = '2425_Q2', 'Dec 2024') AS QTR2,
+    SUPPCLASSCD,
+    SUPPCATCD,
+    MGTTYPDESC_NEW,
+    SA3CD2021,
+    MMM,
+    SILINDICATOR,
+    SDAINDICATOR,
+    SUPP_DEL_COST AS PYMTAMT
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_DIM_PAYMENT__2425_Q2.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+//Join participant data
+LEFT JOIN (FactPayments)
+LOAD
+    PARTICIPANT_KEY,
+    CALDSTS,
+    ATSISTS,
+    NDISDSBLTYGRPNM,
+    AGE_GROUP,
+    IF([AGE_GROUP] = '0-8', '2'
+    , IF([AGE_GROUP] = '9-17', '3'
+    , IF([AGE_GROUP] = '18-64', '4'
+    , IF([AGE_GROUP] = '65+', '5'
+    , IF([AGE_GROUP] = 'Missing', '6', '7'))))) AS AGE_GROUP2
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_DIM_PARTICIPANT__2425_Q2.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
+
+//Join provider data
+LEFT JOIN (FactPayments)
+LOAD
+    PROVIDER_KEY,
+    LEGALNM,
+    LEGALENTYTYPNM,
+    PRVDRSTS,
+    RGSTRTNSTSDESC,
+    NOTFORPROFITIND,
+    PROVIDER_KEY & ' - ' & LEGALNM AS ABN_LEGAL_NM
+FROM [lib://MKA - Folder/1_BaseQVD/PRV_DIM_PROVIDER__2425_Q2.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',', msq);
