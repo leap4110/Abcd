@@ -1,0 +1,55 @@
+**No, those expressions will NOT respect your quarter filter - they will always show the latest age regardless of selection.**
+
+## **The Problem:**
+
+When you select 2223_Q2 in your filter pane:
+- You want to see ages as they were in Q2
+- But my expressions use `Max(Quarter)` which ignores your selection and always shows Q4 ages
+
+## **Solutions That Respect Quarter Selection:**
+
+### **Option 1: Point-in-Time Join (Best - Already in Your SAS Code)**
+
+This is what we fixed earlier in SAS - join each quarter's payments to that quarter's ages:
+
+```sas
+LEFT JOIN PTC
+    ON MT.PARTICIPANT_KEY = PTC.PARTICIPANT_KEY
+    AND MT.QTR = PTC.QTR;  /* Same quarter demographics */
+```
+
+**Result in Qlik:**
+- Filter to 2223_Q2 → Shows Q2 ages (11, 23, 16)
+- Filter to 2223_Q4 → Shows Q4 ages (12, 24, 17)
+- Simple expression: `SUM(Payment)`
+
+### **Option 2: Use ONLY() in Qlik (If you didn't fix in SAS)**
+
+```qlik
+// Dimension: Age (from selected quarters only)
+Only(Age)
+
+// Measure: Total payments
+SUM(Payment)
+```
+
+This respects selections because `Only()` uses the current selection context.
+
+### **Option 3: Conditional Set Analysis**
+
+```qlik
+// If quarter selected: use that quarter's age
+// If no selection: use latest age
+SUM({<[Participant ID] = {"=Quarter = If(GetSelectedCount(Quarter)>0, Only(Quarter), Max(TOTAL <[Participant ID]> Quarter))"}>} Payment)
+```
+
+## **Recommendation:**
+
+**Use the SAS point-in-time join we already implemented.** Your data should already have the correct age for each quarter, so in Qlik you just need:
+
+```qlik
+// Dimension: Age
+// Measure: SUM(Payment)
+```
+
+**The quarter filter will work correctly because each payment record already has its point-in-time age attached.**
