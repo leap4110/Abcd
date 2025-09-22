@@ -1,0 +1,66 @@
+Looking at your Excel data structure, here's how to use set analysis to group payments into the most recent age for each participant:
+
+## **The Challenge:**
+
+- Participant 11: Age changes from 11→12 across quarters
+- Participant 22: Age changes from 23→24 across quarters  
+- Participant 33: Age changes from 16→17 across quarters
+
+You want ALL payments grouped by their LATEST age (12, 24, 17 respectively).
+
+## **Solution: Set Analysis with Latest Age**
+
+```qlik
+// Get the latest age for each participant, then sum all their payments
+SUM(AGGR(
+    SUM({<Quarter={"=$(=Max(TOTAL <[Participant ID]> Quarter))"}>} Payment),
+    [Participant ID]
+))
+```
+
+## **Better Approach: Create Latest Age Mapping in Load Script**
+
+```qlik
+// Step 1: Create mapping table with latest age per participant
+LatestAge:
+LOAD
+    [Participant ID],
+    FirstSortedValue(Age, -Quarter) as Latest_Age
+RESIDENT YourFactTable
+GROUP BY [Participant ID];
+
+// Step 2: Join back to fact table
+LEFT JOIN (YourFactTable)
+LOAD * RESIDENT LatestAge;
+
+// Step 3: Now simply sum by Latest_Age
+// Dimension: Latest_Age
+// Measure: SUM(Payment)
+```
+
+## **Using Set Analysis Expression:**
+
+```qlik
+// Dimension: Age (but showing latest age for each participant)
+// Measure:
+SUM({<[Participant ID] = {"=Quarter = Max(TOTAL <[Participant ID]> Quarter)"}>} Payment)
+```
+
+## **Simplest Solution - Pre-calculate in SAS:**
+
+Add this to your SAS code to flag the latest quarter per participant, then filter in Qlik:
+
+```sas
+PROC SQL;
+    CREATE TABLE PAYMENTS_WITH_LATEST_FLAG AS
+    SELECT 
+         *
+        ,CASE WHEN Quarter = MAX(Quarter) OVER (PARTITION BY Participant_ID) 
+              THEN 1 ELSE 0 END AS Is_Latest_Quarter
+    FROM your_table;
+QUIT;
+
+// Then in Qlik: SUM({<Is_Latest_Quarter={1}>} Payment)
+```
+
+The last approach is cleanest - flag the latest quarter per participant in SAS, then use simple set analysis in Qlik.
