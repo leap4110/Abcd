@@ -1,0 +1,40 @@
+Here are the set analysis expressions to retrieve only the maximum (most recent) quarter when QTR is numeric:
+
+## **Basic Max Quarter Filter:**
+```qlik
+SUM({<QTR={$(=Max(QTR))}>} SUPP_DEL_COST)
+```
+
+## **With Multiple Dimensions:**
+```qlik
+// For age group breakdown using only latest quarter
+SUM({<QTR={$(=Max(QTR))}>} SUPP_DEL_COST)
+// Dimension: AGE_GROUP
+```
+
+## **For Demographics from Latest Quarter Only:**
+```qlik
+// Get participant demographics only from most recent quarter
+Only({<QTR={$(=Max(QTR))}>} PRIMARY_DISABILITY)
+```
+
+## **Alternative - Max QTR Per Participant:**
+```qlik
+// If you want each participant's most recent quarter (not global max)
+SUM({<QTR={"=$(=Max(TOTAL <PARTICIPANT_KEY> QTR))"}>} SUPP_DEL_COST)
+```
+
+## **For All Data But Show Latest Demographics:**
+```qlik
+// Show all payment history but use latest participant info
+Expression 1: SUM(SUPP_DEL_COST)  // All quarters
+Expression 2: Only({<QTR={$(=Max(QTR))}>} PRIMARY_DISABILITY)  // Latest demo
+```
+
+## **Dynamic - User Selected vs Latest:**
+```qlik
+// Falls back to max if no selection
+SUM({<QTR={$(=If(GetSelectedCount(QTR)>0, , Max(QTR)))}>} SUPP_DEL_COST)
+```
+
+The `$(=Max(QTR))` dynamically finds the highest quarter number, so it automatically updates when you add new quarters without changing the expression.
