@@ -1,0 +1,74 @@
+Here's the PROC SQL only version without subqueries:
+
+```sas
+/*------------------------------------------------------------------------------------------------------------------------
+SIMPLE VALIDATION - PROC SQL Only, No Subqueries
+-------------------------------------------------------------------------------------------------------------------------*/
+
+%MACRO SIMPLE_VALIDATION (QTR);
+
+/* Step 1: Get Source Table Metrics */
+PROC SQL;
+	CREATE TABLE SOURCE_METRICS AS
+	SELECT 
+		 'Source: BT_PMTS_DELIVERED' AS Table_Name
+		,COUNT(DISTINCT PRSNWITHDSBLTYID) AS Participant_Count FORMAT=COMMA12.0
+		,SUM(SUPP_DEL_COST) AS Total_Payments FORMAT=DOLLAR15.2
+	FROM OUTBTD.BT_PMTS_DELIVERED&QTR.
+	WHERE PMTRQSTPRVDRABN IS NOT NULL 
+		AND PMTRQSTPRVDRABN NOT IN ('', ' ') 
+		AND PMTRQSTPRVDRABN NOT IN ('DRCTE', 'EXCLS', 'ONLIN', 'REIMB', 'DSBLT', 'NOABN', 'OVRSE');
+QUIT;
+
+/* Step 2: Get Consolidated Table Metrics */
+PROC SQL;
+	CREATE TABLE CONSOL_METRICS AS
+	SELECT 
+		 'Consolidated: CONSOLIDATED_FACT' AS Table_Name
+		,COUNT(DISTINCT PARTICIPANT_KEY) AS Participant_Count FORMAT=COMMA12.0
+		,SUM(SUPP_DEL_COST) AS Total_Payments FORMAT=DOLLAR15.2
+	FROM OUTPRVAP.CONSOLIDATED_FACT_&QTR.;
+QUIT;
+
+/* Step 3: Calculate Difference */
+PROC SQL;
+	CREATE TABLE DIFFERENCE_METRICS AS
+	SELECT 
+		 'Difference' AS Table_Name
+		,A.Participant_Count - B.Participant_Count AS Participant_Count FORMAT=COMMA12.0
+		,A.Total_Payments - B.Total_Payments AS Total_Payments FORMAT=DOLLAR15.2
+	FROM SOURCE_METRICS A
+		,CONSOL_METRICS B;
+QUIT;
+
+/* Step 4: Combine and Display */
+PROC SQL;
+	TITLE "Simple Validation - Quarter &QTR.";
+	SELECT * FROM SOURCE_METRICS
+	UNION ALL
+	SELECT * FROM CONSOL_METRICS
+	UNION ALL
+	SELECT * FROM DIFFERENCE_METRICS;
+QUIT;
+
+/* Clean up */
+PROC SQL;
+	DROP TABLE SOURCE_METRICS, CONSOL_METRICS, DIFFERENCE_METRICS;
+QUIT;
+
+%MEND SIMPLE_VALIDATION;
+
+/* Run for all quarters */
+%SIMPLE_VALIDATION (_2324_Q1);
+%SIMPLE_VALIDATION (_2324_Q2);
+%SIMPLE_VALIDATION (_2324_Q3);
+%SIMPLE_VALIDATION (_2324_Q4);
+%SIMPLE_VALIDATION (_2425_Q1);
+%SIMPLE_VALIDATION (_2425_Q2);
+```
+
+This uses only PROC SQL with:
+- 3 separate queries (no subqueries)
+- Cartesian join for difference calculation (fast since only 1 row in each table)
+- UNION ALL to combine results
+- Only 2 full table scans per quarter
