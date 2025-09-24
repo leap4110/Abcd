@@ -1,0 +1,281 @@
+# Option 2: Load Script with Flag Method - Deep Dive
+
+## Detailed Implementation
+
+### Step 1: Complete Load Script
+
+```qlik
+// ===== LOAD PARTICIPANT DATA WITH FLAGS =====
+
+// First, load the raw time-series participant data
+PARTICIPANT_TEMP:
+LOAD
+    PARTICIPANT_TIME_KEY,
+    PARTICIPANT_KEY,
+    QTR,
+    CALDSTS,
+    ATSISTS,
+    PRIMARY_DISABILITY,
+    AGE_GROUP,
+    GENDER
+FROM [DIM_PARTICIPANT_MASTER.CSV]
+(txt, codepage is 28591, embedded labels, delimiter is ',');
+
+// Create the final participant dimension with multiple flags
+DIM_PARTICIPANT:
+LOAD *,
+    // Flag 1: Is this the participant's latest disability record?
+    If(QTR = Aggr(Max(QTR), PARTICIPANT_KEY), 1, 0) as IS_CURRENT_DISABILITY,
+    
+    // Flag 2: What is this participant's latest disability (for all their records)?
+    Aggr(FirstSortedValue(PRIMARY_DISABILITY, -QTR), PARTICIPANT_KEY) as PARTICIPANT_LATEST_DISABILITY,
+    
+    // Flag 3: What is this participant's latest age group?
+    Aggr(FirstSortedValue(AGE_GROUP, -QTR), PARTICIPANT_KEY) as PARTICIPANT_LATEST_AGE_GROUP,
+    
+    // Flag 4: Did this participant change disability categories?
+    If(Aggr(Count(DISTINCT PRIMARY_DISABILITY), PARTICIPANT_KEY) > 1, 1, 0) as HAS_DISABILITY_CHANGE,
+    
+    // Flag 5: Is this disability different from their latest?
+    If(PRIMARY_DISABILITY = Aggr(FirstSortedValue(PRIMARY_DISABILITY, -QTR), PARTICIPANT_KEY), 0, 1) as IS_HISTORICAL_DISABILITY
+
+RESIDENT PARTICIPANT_TEMP;
+
+DROP TABLE PARTICIPANT_TEMP;
+
+// Load your other tables normally
+FACT_PAYMENTS:
+LOAD * FROM [FACT_PAYMENTS_MASTER.CSV];
+
+DIM_PROVIDER:
+LOAD * FROM [DIM_PROVIDER_MASTER.CSV];
+```
+
+### Step 2: Data Structure After Loading
+
+Your data now looks like this:
+
+| PARTICIPANT_KEY | QTR | PRIMARY_DISABILITY | IS_CURRENT_DISABILITY | PARTICIPANT_LATEST_DISABILITY | HAS_DISABILITY_CHANGE | IS_HISTORICAL_DISABILITY |
+|----------------|-----|-------------------|----------------------|------------------------------|----------------------|-------------------------|
+| 001 | 2324_Q1 | Autism | 0 | Stroke | 1 | 1 |
+| 001 | 2324_Q2 | Autism | 0 | Stroke | 1 | 1 |
+| 001 | 2425_Q1 | Stroke | 1 | Stroke | 1 | 0 |
+| 002 | 2324_Q1 | Stroke | 0 | Stroke | 0 | 0 |
+| 002 | 2324_Q2 | Stroke | 1 | Stroke | 0 | 0 |
+| 003 | 2425_Q1 | Autism | 1 | Autism | 0 | 0 |
+
+## Multiple Analysis Approaches
+
+### Approach A: Basic Current Attribution
+
+**Table Setup:**
+- **Dimension:** `PRIMARY_DISABILITY`
+- **Measures:**
+  ```qlik
+  // Total payments for this disability across all time
+  Sum(SUPP_DEL_COST)
+  
+  // Participants currently classified with this disability
+  Sum(IS_CURRENT_DISABILITY)
+  
+  // Average payment per current participant
+  Sum(SUPP_DEL_COST) / Sum(IS_CURRENT_DISABILITY)
+  ```
+
+**Output:**
+| PRIMARY_DISABILITY | Total Payments | Current Participants | Avg Payment per Current Participant |
+|-------------------|----------------|---------------------|-----------------------------------|
+| Autism | $3,400 | 1 | $3,400 |
+| Stroke | $4,000 | 2 | $2,000 |
+
+### Approach B: Historical vs Current Analysis
+
+**Table Setup:**
+- **Dimension:** `PRIMARY_DISABILITY`
+- **Measures:**
+  ```qlik
+  // All participants who ever had this disability
+  Count(DISTINCT PARTICIPANT_KEY)
+  
+  // Participants currently with this disability
+  Sum(IS_CURRENT_DISABILITY)
+  
+  // Participants who moved away from this disability
+  Count(DISTINCT {<IS_HISTORICAL_DISABILITY={1}>} PARTICIPANT_KEY)
+  
+  // Retention rate
+  Sum(IS_CURRENT_DISABILITY) / Count(DISTINCT PARTICIPANT_KEY)
+  ```
+
+**Output:**
+| PRIMARY_DISABILITY | All Time Participants | Current Participants | Moved Away | Retention Rate |
+|-------------------|---------------------|---------------------|------------|---------------|
+| Autism | 2 | 1 | 1 | 50% |
+| Stroke | 2 | 2 | 0 | 100% |
+
+### Approach C: Participant Journey Analysis
+
+**Table Setup:**
+- **Dimension:** `PARTICIPANT_KEY`
+- **Measures:**
+  ```qlik
+  // Current disability
+  Max({<IS_CURRENT_DISABILITY={1}>} PRIMARY_DISABILITY)
+  
+  // Previous disabilities (concatenated)
+  Concat(DISTINCT {<IS_HISTORICAL_DISABILITY={1}>} PRIMARY_DISABILITY, ', ')
+  
+  // Total payments across all disabilities
+  Sum(SUPP_DEL_COST)
+  
+  // Number of disability changes
+  Max(HAS_DISABILITY_CHANGE)
+  ```
+
+**Output:**
+| PARTICIPANT_KEY | Current Disability | Previous Disabilities | Total Payments | Changed? |
+|----------------|-------------------|---------------------|---------------|----------|
+| 001 | Stroke | Autism | $4,500 | Yes |
+| 002 | Stroke | - | $2,000 | No |
+| 003 | Autism | - | $900 | No |
+
+### Approach D: Time-Based Trend Analysis
+
+**Table Setup:**
+- **Dimension:** `QTR`
+- **Measures:**
+  ```qlik
+  // New participants this quarter (first appearance)
+  Count(DISTINCT {<PARTICIPANT_KEY={"=Count(TOTAL <PARTICIPANT_KEY> QTR) = 1"}>} PARTICIPANT_KEY)
+  
+  // Participants with disability changes this quarter
+  Count(DISTINCT {<IS_CURRENT_DISABILITY={1}, HAS_DISABILITY_CHANGE={1}>} PARTICIPANT_KEY)
+  
+  // Current active participants (as of this quarter)
+  Sum(IS_CURRENT_DISABILITY)
+  ```
+
+**Output:**
+| QTR | New Participants | Disability Changes | Active Participants |
+|-----|-----------------|-------------------|-------------------|
+| 2324_Q1 | 2 | 0 | 2 |
+| 2324_Q2 | 0 | 0 | 2 |
+| 2425_Q1 | 1 | 1 | 3 |
+
+## Advanced Expressions
+
+### Master Items You Can Create
+
+```qlik
+// ===== MASTER DIMENSIONS =====
+
+// Current Disability Distribution
+=PARTICIPANT_LATEST_DISABILITY
+
+// Participants with Changes Only
+=If(HAS_DISABILITY_CHANGE = 1, PARTICIPANT_KEY)
+
+// Historical Disabilities (excluding current)
+=If(IS_HISTORICAL_DISABILITY = 1, PRIMARY_DISABILITY)
+
+// ===== MASTER MEASURES =====
+
+// Current Participant Count by Any Dimension
+Sum(IS_CURRENT_DISABILITY)
+
+// Historical Participant Count (ever had this classification)
+Count(DISTINCT PARTICIPANT_KEY)
+
+// Stability Rate (participants who never changed)
+Count(DISTINCT {<HAS_DISABILITY_CHANGE={0}>} PARTICIPANT_KEY) / 
+Count(DISTINCT PARTICIPANT_KEY)
+
+// Average Tenure with Current Disability
+Avg(Aggr(Count({<IS_CURRENT_DISABILITY={1}>} QTR), PARTICIPANT_KEY))
+
+// Payment Concentration (payments to current vs historical classification)
+Sum({<IS_CURRENT_DISABILITY={1}>} SUPP_DEL_COST) / Sum(SUPP_DEL_COST)
+```
+
+### Conditional Formatting Examples
+
+```qlik
+// Background color for participants with changes
+If(HAS_DISABILITY_CHANGE = 1, RGB(255,200,200), RGB(200,255,200))
+
+// Text color based on retention rate
+If(Sum(IS_CURRENT_DISABILITY) / Count(DISTINCT PARTICIPANT_KEY) < 0.8, 
+   RGB(255,0,0), RGB(0,150,0))
+```
+
+## Filter Interactions
+
+### How Filters Work with This Model
+
+1. **Quarter Filter:**
+   - Shows data for selected quarters only
+   - `IS_CURRENT_DISABILITY` flag updates based on selection
+   - Latest disability recalculates within selection
+
+2. **Disability Filter:**
+   - Can filter by current disability OR historical disability
+   - Use `PARTICIPANT_LATEST_DISABILITY` for current classification
+   - Use `PRIMARY_DISABILITY` for any-time classification
+
+3. **Participant Filter:**
+   - Shows journey for specific participants
+   - Reveals disability changes over time
+
+### Example Filter Scenarios
+
+**Scenario 1: "Show me current Stroke participants"**
+```qlik
+// Filter: PARTICIPANT_LATEST_DISABILITY = 'Stroke'
+// Result: Shows all payments for participants currently classified as Stroke
+//         (including their historical Autism payments if they changed)
+```
+
+**Scenario 2: "Show me participants who changed disabilities"**
+```qlik
+// Filter: HAS_DISABILITY_CHANGE = 1
+// Result: Shows only participants who switched classifications
+```
+
+**Scenario 3: "Show Q1 2024 data with current attribution"**
+```qlik
+// Filter: QTR = '2324_Q1'  
+// Measure: Sum(SUPP_DEL_COST) grouped by PARTICIPANT_LATEST_DISABILITY
+// Result: Q1 payments attributed to participants' eventual latest disability
+```
+
+## Performance Considerations
+
+### Optimization Tips
+
+1. **Index Key Fields:**
+   ```qlik
+   // In your load script, after loading DIM_PARTICIPANT
+   STORE DIM_PARTICIPANT INTO [LIB://Data/DIM_PARTICIPANT.qvd] (qvd);
+   ```
+
+2. **Pre-calculate Heavy Expressions:**
+   ```qlik
+   // Instead of calculating FirstSortedValue repeatedly, store it once
+   LATEST_DISABILITY_LOOKUP:
+   LOAD DISTINCT
+       PARTICIPANT_KEY,
+       FirstSortedValue(PRIMARY_DISABILITY, -QTR) as LATEST_DISABILITY
+   RESIDENT DIM_PARTICIPANT
+   GROUP BY PARTICIPANT_KEY;
+   ```
+
+3. **Use Appropriate Aggregation Scope:**
+   ```qlik
+   // More efficient
+   Aggr(Sum(IS_CURRENT_DISABILITY), PRIMARY_DISABILITY)
+   
+   // Less efficient  
+   Count(DISTINCT {<IS_CURRENT_DISABILITY={1}>} PARTICIPANT_KEY)
+   ```
+
+This flag-based approach gives you maximum flexibility while maintaining data integrity and avoiding double-counting!
