@@ -1,0 +1,138 @@
+Great idea! Let me show you the before/after outputs for each option to make it crystal clear.
+
+## Sample Data Setup
+
+Let's say you have this participant data:
+
+| PARTICIPANT_KEY | QTR | PRIMARY_DISABILITY | SUPP_DEL_COST |
+|----------------|-----|-------------------|---------------|
+| 001 | 2324_Q1 | Autism | $1,000 |
+| 001 | 2324_Q2 | Autism | $1,500 |
+| 001 | 2425_Q1 | Stroke | $2,000 |  ← Changed disability
+| 002 | 2324_Q1 | Stroke | $800 |
+| 002 | 2324_Q2 | Stroke | $1,200 |
+| 003 | 2425_Q1 | Autism | $900 |
+
+---
+
+## BEFORE (Your Current Issue)
+
+**Current Table Output (All Quarters Selected):**
+| PRIMARY_DISABILITY | Total Payments | Participant Count |
+|-------------------|----------------|-------------------|
+| Autism | $1,000 + $1,500 + $900 = $3,400 | 3 ← **WRONG** (001 counted twice + 003) |
+| Stroke | $2,000 + $800 + $1,200 = $4,000 | 2 ← **WRONG** (001 + 002, but 001 moved from Autism) |
+
+**Problems:**
+- Participant 001 is counted in both Autism AND Stroke
+- Total participant count = 5 (but only 3 unique participants exist)
+
+---
+
+## Option 1: Set Analysis Approach
+
+### Implementation:
+```qlik
+// Dimension: PRIMARY_DISABILITY
+// Measures:
+Sum(SUPP_DEL_COST)
+
+// Participant count only for latest disability
+Count(DISTINCT {<PARTICIPANT_KEY = {"=PRIMARY_DISABILITY = FirstSortedValue(TOTAL <PARTICIPANT_KEY> PRIMARY_DISABILITY, -TOTAL <PARTICIPANT_KEY> QTR)"}>} PARTICIPANT_KEY)
+```
+
+### AFTER Output:
+| PRIMARY_DISABILITY | Total Payments | Current Participant Count |
+|-------------------|----------------|--------------------------|
+| Autism | $3,400 | 1 ← **CORRECT** (only participant 003) |
+| Stroke | $4,000 | 2 ← **CORRECT** (participants 001 + 002) |
+
+**What happened:**
+- ✅ All payments still shown for each disability
+- ✅ Participant 001 only counted in Stroke (their latest)
+- ✅ Total participant count = 3 (correct)
+
+---
+
+## Option 2: Load Script with Flag
+
+### Implementation:
+```qlik
+DIM_PARTICIPANT:
+LOAD *,
+    If(QTR = Aggr(Max(QTR), PARTICIPANT_KEY), 1, 0) as IS_CURRENT_DISABILITY
+RESIDENT PARTICIPANT_TEMP;
+
+// Measures:
+Sum(SUPP_DEL_COST)
+Sum(IS_CURRENT_DISABILITY)
+```
+
+### AFTER Output:
+| PRIMARY_DISABILITY | Total Payments | Current Participants | IS_CURRENT_DISABILITY Flag Distribution |
+|-------------------|----------------|---------------------|---------------------------------------|
+| Autism | $3,400 | 1 | 001(Q1)=0, 001(Q2)=0, 003(Q1)=1 |
+| Stroke | $4,000 | 2 | 001(Q1)=1, 002(Q1)=0, 002(Q2)=1 |
+
+**What happened:**
+- ✅ Flag correctly identifies latest disability per participant
+- ✅ Sum of flags gives correct participant count per disability
+- ✅ All historical payment data preserved
+
+---
+
+## Option 3: Two-Column Approach
+
+### Implementation:
+```qlik
+// Historical Count
+Count(DISTINCT PARTICIPANT_KEY)
+
+// Current Count  
+Count(DISTINCT {<PARTICIPANT_KEY = {"=PRIMARY_DISABILITY = FirstSortedValue(TOTAL <PARTICIPANT_KEY> PRIMARY_DISABILITY, -TOTAL <PARTICIPANT_KEY> QTR)"}>} PARTICIPANT_KEY)
+```
+
+### AFTER Output:
+| PRIMARY_DISABILITY | Total Payments | Historical Participants | Current Participants |
+|-------------------|----------------|------------------------|---------------------|
+| Autism | $3,400 | 2 ← (001 + 003 ever had autism) | 1 ← (003 currently) |
+| Stroke | $4,000 | 2 ← (001 + 002 ever had stroke) | 2 ← (001 + 002 currently) |
+
+**What happened:**
+- ✅ Shows both historical exposure and current classification
+- ✅ "Historical" = anyone who ever had this disability
+- ✅ "Current" = latest disability classification only
+
+---
+
+## Option 4: Detailed Breakdown
+
+### BEFORE (Raw Data View):
+| PARTICIPANT_KEY | QTR | PRIMARY_DISABILITY | SUPP_DEL_COST |
+|----------------|-----|-------------------|---------------|
+| 001 | 2324_Q1 | Autism | $1,000 |
+| 001 | 2324_Q2 | Autism | $1,500 |
+| 001 | 2425_Q1 | Stroke | $2,000 |
+| 002 | 2324_Q1 | Stroke | $800 |
+| 002 | 2324_Q2 | Stroke | $1,200 |
+| 003 | 2425_Q1 | Autism | $900 |
+
+### AFTER (Aggregated with Latest Attribution):
+| PRIMARY_DISABILITY | All Payments | Participants (Latest Only) | Payment Breakdown |
+|-------------------|-------------|---------------------------|-------------------|
+| Autism | $3,400 | 1 (003) | 001: $2,500 → **attributed to Stroke**<br>003: $900 → **stays in Autism** |
+| Stroke | $4,000 | 2 (001,002) | 001: $2,000 + previous $2,500 → **all attributed here**<br>002: $2,000 → **stays in Stroke** |
+
+---
+
+## Summary Comparison
+
+| Approach | Shows All Payments? | Avoids Double-Counting? | Shows Journey? | Complexity |
+|----------|-------------------|------------------------|----------------|------------|
+| **Option 1: Set Analysis** | ✅ Yes | ✅ Yes | ❌ No | 🟢 Low |
+| **Option 2: Flag Method** | ✅ Yes | ✅ Yes | ⚠️ Partial | 🟡 Medium |
+| **Option 3: Two-Column** | ✅ Yes | ✅ Yes | ✅ Yes | 🟡 Medium |
+
+**Recommendation:** Option 2 (Flag Method) gives you exactly what you asked for - all disability classifications visible with participant counts allocated only to their most recent disability.
+
+Which output format looks best for your needs?
