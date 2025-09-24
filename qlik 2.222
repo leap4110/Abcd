@@ -1,0 +1,132 @@
+I can see the issue in your screenshot. You're getting duplicate rows for the same participant (0430020569) across different quarters (2324_Q1 and 2324_Q2), both showing "Stroke" as the primary disability. This is happening because of how your dimensional model is set up with composite keys.
+
+## The Problem
+
+When no quarters are selected in your filter panel, Qlik is showing **all** records from your dimension tables, including the same participant appearing multiple times across different quarters with the same disability type.
+
+## Solutions
+
+### Option 1: Aggregate at the Expression Level (Recommended)
+
+Instead of showing raw dimensional data, use aggregated expressions in your table:
+
+**Dimensions:**
+- `PRIMARY_DISABILITY` (only)
+
+**Measures:**
+```qlik
+// Total payments across all periods
+Sum(SUPP_DEL_COST)
+
+// Count of unique participants (not participant-time combinations)
+Count(DISTINCT PARTICIPANT_KEY)
+
+// Count of unique participants per time period
+Count(DISTINCT PARTICIPANT_TIME_KEY)
+```
+
+### Option 2: Use Set Analysis to Handle Time Selection
+
+**Dimensions:**
+- `PRIMARY_DISABILITY`
+
+**Measures:**
+```qlik
+// If quarters selected, use selected quarters, otherwise use latest quarter
+Sum({<QTR = {$(=if(GetSelectedCount(QTR)>0, '', '2425_Q2'))}>} SUPP_DEL_COST)
+
+// Or show total across all time if no quarter selected
+Sum({<QTR = {$(=if(GetSelectedCount(QTR)>0, GetFieldSelections(QTR), '*'))}>} SUPP_DEL_COST)
+```
+
+### Option 3: Create a Master Dimension Table (Modify SAS Code)
+
+Add this to your SAS code to create a deduplicated dimension:
+
+```sas
+/* Create master participant dimension with latest attributes */
+PROC SQL;
+    CREATE TABLE OUTPRVAP.DIM_PARTICIPANT_LATEST AS
+    SELECT DISTINCT PARTICIPANT_KEY
+        , CALDSTS
+        , ATSISTS  
+        , PRIMARY_DISABILITY
+        , AGE_GROUP
+        , GENDER
+    FROM (
+        SELECT *, 
+               ROW_NUMBER() OVER (PARTITION BY PARTICIPANT_KEY 
+                                ORDER BY QTR DESC) AS RN
+        FROM OUTPRVAP.DIM_PARTICIPANT_MASTER
+    )
+    WHERE RN = 1;
+QUIT;
+```
+
+### Option 4: Qlik Script Solution (Recommended)
+
+Modify your Qlik load script to create a latest attributes table:
+
+```qlik
+// Load your existing participant dimension
+DIM_PARTICIPANT_TEMP:
+LOAD
+    PARTICIPANT_TIME_KEY,
+    PARTICIPANT_KEY,
+    QTR,
+    CALDSTS,
+    ATSISTS,
+    PRIMARY_DISABILITY,
+    AGE_GROUP,
+    GENDER
+FROM [DIM_PARTICIPANT_MASTER.CSV];
+
+// Create latest attributes table
+DIM_PARTICIPANT_LATEST:
+LOAD
+    PARTICIPANT_KEY,
+    FirstSortedValue(CALDSTS, -QTR) as CALDSTS,
+    FirstSortedValue(ATSISTS, -QTR) as ATSISTS,
+    FirstSortedValue(PRIMARY_DISABILITY, -QTR) as PRIMARY_DISABILITY,
+    FirstSortedValue(AGE_GROUP, -QTR) as AGE_GROUP,
+    FirstSortedValue(GENDER, -QTR) as GENDER
+RESIDENT DIM_PARTICIPANT_TEMP
+GROUP BY PARTICIPANT_KEY;
+
+DROP TABLE DIM_PARTICIPANT_TEMP;
+```
+
+### Option 5: Use Conditional Dimensions
+
+In your table, use these expressions:
+
+**Dimension:**
+```qlik
+// Show disability breakdown, but aggregate participants
+Aggr(Sum(SUPP_DEL_COST), PRIMARY_DISABILITY)
+```
+
+**Or create a calculated dimension:**
+```qlik
+// In dimension, use:
+=Aggr(PRIMARY_DISABILITY, PRIMARY_DISABILITY)
+```
+
+## Immediate Fix for Your Current Setup
+
+For your current table showing the duplicates:
+
+1. **Remove** `PARTICIPANT_KEY` and `QTR` from your table dimensions
+2. **Keep only** `PRIMARY_DISABILITY` as dimension
+3. **Use this expression** for total payments:
+   ```qlik
+   Sum(SUPP_DEL_COST)
+   ```
+4. **Use this expression** for participant count:
+   ```qlik
+   Count(DISTINCT PARTICIPANT_KEY)
+   ```
+
+This will aggregate the duplicate entries and show you the total payments by disability type without the duplicates.
+
+The root cause is that your dimensional model is designed for time-series analysis, but when no time filter is applied, it shows all time periods. The solution is to either aggregate the data or apply default time filtering.
