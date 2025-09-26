@@ -1,0 +1,41 @@
+Ah! Now I understand the problem. **PARTICIPANT_KEY is not unique** - each participant appears up to 8 times (once per quarter). This means you can't use PARTICIPANT_KEY as a dimension because it's not a proper unique identifier.
+
+## The Real Solution
+
+You need to create a **composite key** that uniquely identifies each participant:
+
+### Option 1: Create a Master Key Field (Best Approach)
+In your load script, add:
+```qlik
+// Create a unique participant identifier (strip quarter from PARTICIPANT_KEY)
+MASTER_PARTICIPANT_KEY = Left(PARTICIPANT_KEY, Index(PARTICIPANT_KEY, '_') - 1)
+```
+
+Then use:
+- **Dimension:** `MASTER_PARTICIPANT_KEY`  
+- **Expression:** `FirstSortedValue(PRIMARY_DISABILITY, QTR, -1)`
+
+### Option 2: If You Can't Modify Load Script
+Use this approach in your table:
+
+**Dimension:**
+```qlik
+// Group by the base participant ID (without quarter)
+Left(PARTICIPANT_KEY, Index(PARTICIPANT_KEY, '_') - 1)
+```
+
+**Expression:**
+```qlik
+FirstSortedValue(PRIMARY_DISABILITY, QTR, -1)
+```
+
+### Option 3: Use Aggr() to Handle Multiple Records
+**Dimension:** Keep using `PARTICIPANT_KEY`
+
+**Expression:**
+```qlik
+// Get the most recent value across all rows for this participant base
+Only(Aggr(FirstSortedValue(PRIMARY_DISABILITY, QTR, -1), Left(PARTICIPANT_KEY, Index(PARTICIPANT_KEY, '_') - 1)))
+```
+
+**Try Option 1 or 2 first** - they're cleaner solutions. The key insight is that you need to group by the **base participant identifier** rather than the quarter-specific PARTICIPANT_KEY.
