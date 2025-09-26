@@ -1,0 +1,36 @@
+Right! The issue is that `MaxString(QTR)` ignores your filter selections and always returns the absolute maximum quarter in the dataset. You need the expression to be dynamic to your filter.
+
+## Dynamic Solution - Respect Filter Selections
+
+**Replace this:**
+```qlik
+Count(DISTINCT {<QTR = {"$(=MaxString(QTR))"}>} PARTICIPANT_KEY)
+```
+
+**With this:**
+```qlik
+Count(DISTINCT {<QTR = {"$(=Max(QTR))"}>} PARTICIPANT_KEY)
+```
+
+The difference:
+- `MaxString(QTR)` = Absolute maximum across ALL data (ignores filters)
+- `Max(QTR)` = Maximum within current filter context (respects selections)
+
+## Alternative Approach - Most Recent Per Participant
+
+If you want each participant counted only once using their most recent quarter within the selected time period:
+
+```qlik
+Count(DISTINCT Aggr(
+    If(QTR = Max(TOTAL <PARTICIPANT_KEY> QTR), PARTICIPANT_KEY), 
+    PARTICIPANT_KEY
+))
+```
+
+## Test It
+
+With `Max(QTR)` in your expression:
+- When you select "December 2024", it should count participants from December 2024
+- When no filter is applied, it should count participants from March 2025 (the overall maximum)
+
+Try the first solution with `Max(QTR)` - this should make your count dynamic to the quarter filter selections.
