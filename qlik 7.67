@@ -1,0 +1,51 @@
+Here's the Qlik set analysis to get the most recent demographic attribute for a participant:
+
+## Basic Set Analysis for Most Recent Record
+
+```qlik
+// Get PRIMARY_DISABILITY for most recent quarter per participant
+Only({<QTR = {"$(=Max({<PARTICIPANT_KEY = {'$(=PARTICIPANT_KEY)'}>} QTR))"}>} PRIMARY_DISABILITY)
+```
+
+## More Robust Version with MaxString
+
+```qlik
+// Using MaxString to get most recent demographic
+MaxString({<QTR = {"$(=Max({<PARTICIPANT_KEY = P(PARTICIPANT_KEY)>} QTR))"}>} PRIMARY_DISABILITY)
+```
+
+## In a Table Expression
+
+```qlik
+// Column expression for most recent PRIMARY_DISABILITY by participant
+MaxString({<QTR = {"$(=Max({<PARTICIPANT_KEY = {'$(=PARTICIPANT_KEY)'}>} QTR))"}>} PRIMARY_DISABILITY)
+```
+
+## Alternative Using Aggr()
+
+```qlik
+// Using Aggr to get most recent per participant
+FirstSortedValue({<QTR>} PRIMARY_DISABILITY, -QTR)
+```
+
+## For Multiple Demographic Fields
+
+```qlik
+// Age Group - most recent
+FirstSortedValue({<QTR>} AGE_GROUP, -QTR)
+
+// Gender - most recent  
+FirstSortedValue({<QTR>} GENDER, -QTR)
+
+// CALD Status - most recent
+FirstSortedValue({<QTR>} CALDSTS, -QTR)
+```
+
+## If You Want to Filter the Entire Chart
+
+```qlik
+// Set analysis to only show most recent quarter data for each participant
+{<QTR = {"$(=Concat(Distinct Aggr(Max(QTR), PARTICIPANT_KEY), '|'))"}>}
+```
+
+The **`FirstSortedValue()`** approach is usually the most reliable for getting the most recent demographic attribute per participant in Qlik.
