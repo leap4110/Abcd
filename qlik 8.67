@@ -1,0 +1,56 @@
+Perfect! Now I can see the problem. Your expression `QTR & ' - ' & PRIMARY_DISABILITY` is working and showing the data exists, but you're getting **one row per QTR-Disability combination** instead of one row per participant.
+
+The issue is that you're **concatenating QTR with PRIMARY_DISABILITY as a single field**, which creates multiple rows per participant.
+
+## The Fix
+
+You need to **separate** these into different columns:
+
+### Step 1: Change Your Table Structure
+
+**Dimension:** 
+```qlik
+PARTICIPANT_KEY
+```
+
+**Column 1 - Most Recent QTR:**
+```qlik
+MaxString(QTR)
+```
+
+**Column 2 - Most Recent Primary Disability:**
+```qlik
+FirstSortedValue(PRIMARY_DISABILITY, QTR, -1)
+```
+
+### Step 2: Alternative Approach
+If that still doesn't work, try this approach:
+
+**Dimension:**
+```qlik
+PARTICIPANT_KEY
+```
+
+**Expression:**
+```qlik
+FirstSortedValue(PRIMARY_DISABILITY & ' (' & QTR & ')', QTR, -1)
+```
+
+This will show you the most recent disability with its quarter in parentheses.
+
+### Step 3: Debug Version
+To see all combinations per participant:
+
+**Dimension:**
+```qlik
+PARTICIPANT_KEY  
+```
+
+**Expression:**
+```qlik
+Concat(DISTINCT QTR & '-' & PRIMARY_DISABILITY, ', ')
+```
+
+**The key insight from your screenshot:** Your data is structured correctly - you have QTR and PRIMARY_DISABILITY data. You just need to aggregate it properly by PARTICIPANT_KEY instead of showing every QTR-Disability combination as a separate row.
+
+Try the approach in Step 1 first.
