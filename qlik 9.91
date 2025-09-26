@@ -1,0 +1,36 @@
+Yes, this makes perfect sense! You're experiencing the classic **double-counting problem**. 
+
+**What's happening:**
+- Total participants: 689,651
+- Sum of disability breakdown: 7,342 + 19,868 + 24,617 + ... = much larger number
+- This means participants are being counted multiple times in the disability breakdown
+
+**The root cause:** Some participants appear in multiple disability categories, or they have multiple records with different disability classifications.
+
+## Solutions to Fix the Double-Counting
+
+**Option 1: Use Only() to Get One Disability Per Participant**
+Change your disability breakdown expression to:
+```qlik
+Count(DISTINCT Aggr(Only(PARTICIPANT_KEY), PARTICIPANT_KEY, PRIMARY_DISABILITY))
+```
+
+**Option 2: Count Only the First/Most Recent Disability**
+```qlik
+Count(DISTINCT Aggr(
+    If(PRIMARY_DISABILITY = FirstSortedValue(PRIMARY_DISABILITY, QTR, -1), PARTICIPANT_KEY), 
+    PARTICIPANT_KEY
+))
+```
+
+**Option 3: Debug - See Which Participants Have Multiple Disabilities**
+Create a test table:
+- **Dimension:** `PARTICIPANT_KEY`
+- **Expression:** `Count(DISTINCT PRIMARY_DISABILITY)`
+
+This will show you which participants (if any) have more than one disability type.
+
+**Option 4: Simple Fix - Use the Same Logic for Both**
+If your total uses `Count(DISTINCT PARTICIPANT_KEY)`, make sure your breakdown uses the same participant-level aggregation.
+
+Try Option 3 first to see if participants have multiple disability classifications. That will tell us which approach to use to fix the double-counting issue.
