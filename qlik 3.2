@@ -1,0 +1,60 @@
+The blank rows suggest the set analysis isn't resolving properly. Here are simpler alternatives that should work:
+
+## Option 1: Use FirstSortedValue (Most Reliable)
+
+```qlik
+// In your table chart expressions:
+FirstSortedValue(PRIMARY_DISABILITY, -QTR)
+FirstSortedValue(AGE_GROUP, -QTR) 
+FirstSortedValue(GENDER, -QTR)
+FirstSortedValue(CALDSTS, -QTR)
+```
+
+## Option 2: Use Only with Aggr
+
+```qlik
+// Most recent PRIMARY_DISABILITY per participant
+Only(Aggr(FirstSortedValue(PRIMARY_DISABILITY, -QTR), PARTICIPANT_KEY))
+```
+
+## Option 3: Simple Max Approach
+
+```qlik
+// If QTR is numeric or sortable text
+Only({<QTR={$(=Max(TOTAL QTR))}>} PRIMARY_DISABILITY)
+```
+
+## Option 4: Calculated Dimension Approach
+
+Instead of set analysis, create a **calculated dimension** in your table:
+
+**Dimension:**
+```qlik
+PARTICIPANT_KEY
+```
+
+**Expression for demographics:**
+```qlik
+FirstSortedValue(DISTINCT PRIMARY_DISABILITY, -QTR)
+```
+
+## Debug Steps
+
+**Check your field names first:**
+1. Verify field names in your data model (case sensitive)
+2. Check if QTR field contains the values you expect
+3. Ensure PARTICIPANT_KEY is properly associated
+
+**Test with simple expressions:**
+```qlik
+// Test 1: Does this show data?
+Count(PARTICIPANT_KEY)
+
+// Test 2: Does this show quarters?
+Concat(DISTINCT QTR, ', ')
+
+// Test 3: Does this show demographics?
+Concat(DISTINCT PRIMARY_DISABILITY, ', ')
+```
+
+**Which approach are you trying, and what exactly do you see in the table - completely empty or just the demographic columns blank?**
