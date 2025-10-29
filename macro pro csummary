@@ -1,0 +1,18 @@
+%MACRO get_distinct(table=, field=);
+   PROC SUMMARY DATA=&table NWAY;
+      CLASS &field / ORDER=DATA;
+      OUTPUT OUT=distinct_&field(KEEP=&field);
+   RUN;
+   
+   /* Optional: Print the results */
+   PROC PRINT DATA=distinct_&field NOOBS;
+      TITLE "Distinct values for &field";
+   RUN;
+%MEND;
+
+/* Usage - call it multiple times */
+%get_distinct(table=business_table, field=field1);
+%get_distinct(table=business_table, field=field2);
+%get_distinct(table=business_table, field=field3);
+%get_distinct(table=business_table, field=status);
+%get_distinct(table=business_table, field=region);
