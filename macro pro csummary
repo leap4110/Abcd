@@ -4,15 +4,27 @@
       OUTPUT OUT=distinct_&field(KEEP=&field);
    RUN;
    
-   /* Optional: Print the results */
-   PROC PRINT DATA=distinct_&field NOOBS;
-      TITLE "Distinct values for &field";
+   /* Add row number for merging */
+   DATA distinct_&field;
+      SET distinct_&field;
+      _row = _N_;
    RUN;
 %MEND;
 
-/* Usage - call it multiple times */
+/* Call macro for each field */
 %get_distinct(table=business_table, field=field1);
 %get_distinct(table=business_table, field=field2);
 %get_distinct(table=business_table, field=field3);
-%get_distinct(table=business_table, field=status);
-%get_distinct(table=business_table, field=region);
+
+/* Merge all datasets side by side */
+DATA consolidated_distinct;
+   MERGE distinct_field1(RENAME=(_row=_row1))
+         distinct_field2(RENAME=(_row=_row2))
+         distinct_field3(RENAME=(_row=_row3));
+   BY _row1;
+   DROP _row1 _row2 _row3;
+RUN;
+
+PROC PRINT DATA=consolidated_distinct;
+   TITLE "Consolidated Distinct Values";
+RUN;
