@@ -195,12 +195,6 @@ RUN;
 
 
 
-
-
-
-
-
-
 %MACRO CONSOLIDATE_DISTINCT(TABLE=, FIELDS=);
    %LOCAL I FIELD;
    
@@ -211,7 +205,7 @@ RUN;
          %LET FIELD = %SCAN(&FIELDS, &I);
          %IF &I > 1 %THEN UNION ALL;
          SELECT DISTINCT "&FIELD" AS FIELD_NAME, 
-                PUT(&FIELD, BEST32.) AS VALUE
+                CATS(&FIELD) AS VALUE
          FROM &TABLE
          WHERE &FIELD IS NOT MISSING
       %END;
