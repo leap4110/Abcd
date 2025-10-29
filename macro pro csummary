@@ -28,3 +28,50 @@ RUN;
 PROC PRINT DATA=consolidated_distinct;
    TITLE "Consolidated Distinct Values";
 RUN;
+
+
+
+
+%MACRO consolidate_distinct(table=, fields=);
+   %LOCAL i field field_list merge_list;
+   
+   /* Step 1: Create distinct datasets for each field */
+   %DO i=1 %TO %SYSFUNC(countw(&fields));
+      %LET field = %SCAN(&fields, &i);
+      
+      PROC SUMMARY DATA=&table NWAY;
+         CLASS &field / ORDER=DATA;
+         OUTPUT OUT=distinct_&field(KEEP=&field);
+      RUN;
+      
+      /* Add row number */
+      DATA distinct_&field;
+         SET distinct_&field;
+         _row = _N_;
+      RUN;
+   %END;
+   
+   /* Step 2: Build merge statement */
+   %LET merge_list = ;
+   %DO i=1 %TO %SYSFUNC(countw(&fields));
+      %LET field = %SCAN(&fields, &i);
+      %LET merge_list = &merge_list distinct_&field;
+   %END;
+   
+   /* Step 3: Merge all datasets */
+   DATA consolidated_distinct;
+      MERGE &merge_list;
+      BY _row;
+      DROP _row;
+   RUN;
+   
+   PROC PRINT DATA=consolidated_distinct;
+      TITLE "Consolidated Distinct Values";
+   RUN;
+%MEND;
+
+/* Single call with all fields */
+%consolidate_distinct(
+   table=business_table, 
+   fields=field1 field2 field3 status region
+);
